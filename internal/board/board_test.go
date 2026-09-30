@@ -105,16 +105,6 @@ func TestMoveStepHopsAndRespectsEdges(t *testing.T) {
 	}
 }
 
-func TestNeighborPrefersSameRowHorizontally(t *testing.T) {
-	b := &Board{Nodes: []Node{node("A", 0, 0), node("far", 0, 4), node("diag", 3, 1)}}
-	if got := b.Neighbor("A", Right); got != "far" {
-		t.Errorf("Right = %s", got)
-	}
-	if got := b.Neighbor("A", Down); got != "diag" {
-		t.Errorf("Down = %s", got)
-	}
-}
-
 func TestNearestEmpty(t *testing.T) {
 	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 0, 1)}}
 	if r, c := b.NearestEmpty(0, 0); r != 1 || c != 0 {

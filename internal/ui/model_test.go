@@ -45,7 +45,10 @@ func titles(b *board.Board) map[string][2]int {
 func TestRhythmicAddConnectComplete(t *testing.T) {
 	dir := t.TempDir()
 	m := New(dir, &board.Board{})
-	m, _ = func() (Model, tea.Cmd) { n, c := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30}); return n.(Model), c }()
+	m, _ = func() (Model, tea.Cmd) {
+		n, c := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+		return n.(Model), c
+	}()
 
 	// a: first node; o, o: a chain below it; a: a sibling off to the side.
 	m = press(t, m, "a", "設計", "<enter>", "o", "実装", "<enter>", "o", "リリース", "<enter>")
@@ -83,13 +86,13 @@ func TestRhythmicAddConnectComplete(t *testing.T) {
 	if n := m.selected(); !n.Done {
 		t.Errorf("space did not complete %s", n.Title)
 	}
-	thread, _ := os.ReadFile(filepath.Join(board.NodeDir(dir, m.sel), "thread.md"))
+	thread, _ := os.ReadFile(filepath.Join(board.NodeDir(dir, m.selected().ID), "thread.md"))
 	if !strings.Contains(string(thread), "Completed") {
 		t.Errorf("thread missing completion log: %q", thread)
 	}
 
 	m = press(t, m, "u", "u")
-	if got := titles(m.b)["雑務"]; got != [2]int{2, 1} || m.b.Node(m.sel).Done {
+	if got := titles(m.b)["雑務"]; got != [2]int{2, 1} || m.b.At(2, 1).Done {
 		t.Errorf("undo x2 should restore position and done flag: %v", got)
 	}
 	m = press(t, m, "<c-r>")
@@ -102,6 +105,42 @@ func TestRhythmicAddConnectComplete(t *testing.T) {
 		t.Errorf("board.json: %v nodes=%d edges=%d", err, len(saved.Nodes), len(saved.Edges))
 	}
 	t.Log("\n" + m.View())
+}
+
+func TestBufferRowsAcceptNewNodes(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+
+	// An empty board still offers bufferRows rows to walk into.
+	m = press(t, m, "j", "j", "j", "j", "l", "l")
+	if m.row != bufferRows-1 || m.col != 2 {
+		t.Fatalf("cursor at %d,%d", m.row, m.col)
+	}
+	m = press(t, m, "a", "深いところ", "<enter>")
+	if got := titles(m.b)["深いところ"]; got != [2]int{2, 2} {
+		t.Fatalf("added at %v", got)
+	}
+
+	// The buffer follows the lowest node down.
+	m = press(t, m, "j", "j", "j", "j", "j")
+	if m.row != 2+bufferRows {
+		t.Errorf("cursor stopped at row %d", m.row)
+	}
+	m = press(t, m, "h", "n", "もっと下", "<enter>")
+	if got := titles(m.b)["もっと下"]; got != [2]int{5, 1} {
+		t.Errorf("added at %v", got)
+	}
+
+	// Deleting leaves the cursor on the now-empty cell.
+	m = press(t, m, "d")
+	if m.row != 5 || m.col != 1 || m.selected() != nil {
+		t.Errorf("after delete cursor %d,%d on %v", m.row, m.col, m.selected())
+	}
+
+	// Connecting to an empty cell is refused without leaving connect mode.
+	m = press(t, m, "k", "k", "k", "l", "c", "j", "<enter>")
+	if m.mode != modeConnect || m.msg == "" {
+		t.Errorf("mode=%v msg=%q", m.mode, m.msg)
+	}
 }
 
 func hasEdge(b *board.Board, from, to string) bool {

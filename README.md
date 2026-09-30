@@ -27,10 +27,11 @@ Plain files, so the directory can be a git repo of its own.
 
 | Key | Action |
 | --- | --- |
-| `hjkl` / arrows | Move selection spatially |
-| `g` / `G` | First / last node |
+| `hjkl` / arrows | Move the cursor one cell (empty cells included) |
+| `w` / `b` | Jump to the next / previous node |
+| `g` / `G` | Top / last row with nodes |
+| `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
 | `o` / `O` | Insert a node below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B) |
-| `a` / `n` | Add an unconnected node in the nearest empty cell |
 | `i` | Rename |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge |
@@ -45,6 +46,8 @@ New nodes ask for a title right away; `Esc` on that prompt discards the node.
 ## Rules
 
 - Six columns, rows grow downward, one node per cell.
+- Three empty rows always follow the lowest node, so there is room to walk
+  into and drop new nodes.
 - Edges always point to a lower row. Connecting two nodes on the same row
   pushes the target down a row; upward edges are refused.
 

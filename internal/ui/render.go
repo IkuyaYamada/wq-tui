@@ -19,6 +19,10 @@ const (
 	cardH  = 3
 	gap    = 2
 	margin = 1
+
+	// bufferRows empty rows always follow the lowest node, so there is
+	// somewhere to move the cursor and drop a new node.
+	bufferRows = 3
 )
 
 // layout maps grid cells to canvas coordinates. Rows are separated by lanes
@@ -34,7 +38,7 @@ func newLayout(b *board.Board, termW int) layout {
 	l := layout{cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
 	l.cardW = max(l.cardW, 8)
 	l.width = 2*margin + board.Cols*l.cardW + (board.Cols-1)*gap
-	rows := b.MaxRow() + 1
+	rows := b.MaxRow() + 1 + bufferRows
 	// An edge that changes column needs a horizontal run, either in the
 	// lane right below its source or the lane right above its target.
 	turning := make([]int, rows)
@@ -82,6 +86,7 @@ const (
 	stTitleDone
 	stEdge
 	stEdgeHL
+	stDot
 )
 
 var styles = map[style]lipgloss.Style{
@@ -95,6 +100,7 @@ var styles = map[style]lipgloss.Style{
 	stTitleDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Strikethrough(true),
 	stEdge:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 	stEdgeHL:       lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
+	stDot:          lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 }
 
 type cell struct {
@@ -166,14 +172,11 @@ func (c *canvas) line(y int) string {
 var (
 	frameNormal = [6]rune{'╭', '─', '╮', '│', '╰', '╯'}
 	frameBold   = [6]rune{'┏', '━', '┓', '┃', '┗', '┛'}
+	frameDashed = [6]rune{'┌', '╌', '┐', '╎', '└', '┘'}
 )
 
-func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool) {
-	f := frameNormal
-	if bold {
-		f = frameBold
-	}
-	x, y := l.colX(n.Col), l.rowY[n.Row]
+func drawFrame(cv *canvas, l layout, row, col int, f [6]rune, border style) {
+	x, y := l.colX(col), l.rowY[row]
 	w := l.cardW
 	cv.set(x, y, f[0], border)
 	cv.set(x+w-1, y, f[2], border)
@@ -183,8 +186,18 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	cv.set(x+w-1, y+2, f[5], border)
 	for i := 1; i < w-1; i++ {
 		cv.set(x+i, y, f[1], border)
+		cv.set(x+i, y+1, ' ', stPlain)
 		cv.set(x+i, y+2, f[1], border)
 	}
+}
+
+func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool) {
+	f := frameNormal
+	if bold {
+		f = frameBold
+	}
+	drawFrame(cv, l, n.Row, n.Col, f, border)
+	x, y, w := l.colX(n.Col), l.rowY[n.Row], l.cardW
 	label := n.Title
 	if n.Done {
 		label = "✓ " + label
@@ -230,19 +243,33 @@ const (
 	bitR
 )
 
-// renderBoard draws every card and routed edge onto a canvas. sel is the
-// selected node; target (connect mode) and moving (move mode) get their own
-// highlight.
-func renderBoard(b *board.Board, l layout, routes []route, sel, target, moving string) *canvas {
+// view describes what to highlight: the cursor cell (drawn in cursorSt, as
+// a dashed placeholder when empty), an anchor node such as the source of a
+// connection, and the node whose edges light up.
+type view struct {
+	cursorRow, cursorCol int
+	cursorSt             style
+	anchor               string
+	lit                  string
+}
+
+// renderBoard draws every card, the cursor and the routed edges.
+func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	cv := newCanvas(l.width, l.height)
+	// A faint dot marks every cell so empty rows still read as a grid.
+	for r := range l.rowY {
+		for c := 0; c < board.Cols; c++ {
+			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+1, '·', stDot)
+		}
+	}
+	onCursor := false
 	for _, n := range b.Nodes {
 		border, title, bold := stBorder, stTitle, false
 		switch {
-		case n.ID == moving:
-			border, title, bold = stBorderMove, stTitleSel, true
-		case n.ID == target:
-			border, title, bold = stBorderTarget, stTitleSel, true
-		case n.ID == sel:
+		case n.Row == v.cursorRow && n.Col == v.cursorCol:
+			border, title, bold = v.cursorSt, stTitleSel, true
+			onCursor = true
+		case n.ID == v.anchor:
 			border, title, bold = stBorderSel, stTitleSel, true
 		case n.Done:
 			border, title = stBorderDone, stTitleDone
@@ -252,11 +279,14 @@ func renderBoard(b *board.Board, l layout, routes []route, sel, target, moving s
 		}
 		drawCard(cv, l, n, border, title, bold)
 	}
+	if !onCursor && v.cursorRow < len(l.rowY) {
+		drawFrame(cv, l, v.cursorRow, v.cursorCol, frameDashed, v.cursorSt)
+	}
 
 	bits := make([]uint8, cv.w*cv.h)
 	hl := make([]bool, cv.w*cv.h)
 	for _, rt := range routes {
-		lit := rt.from == sel || rt.to == sel
+		lit := v.lit != "" && (rt.from == v.lit || rt.to == v.lit)
 		st := stEdge
 		if lit {
 			st = stEdgeHL

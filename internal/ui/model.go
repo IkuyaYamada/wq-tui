@@ -29,14 +29,17 @@ const maxUndo = 200
 type Model struct {
 	dir  string
 	b    *board.Board
-	sel  string
 	undo []*board.Board
 	redo []*board.Board
+
+	// The cursor is a cell, not a node, so it can rest on empty cells.
+	row, col int
 
 	mode     mode
 	input    textinput.Model
 	inputNew bool   // the node being titled was just created; Esc discards it
-	prevSel  string // selection to restore when a new node is discarded
+	prevCur  [2]int // cursor to restore when a new node is discarded
+	moveID   string
 	moveOrig *board.Board
 	connFrom string
 
@@ -52,9 +55,7 @@ func New(dir string, b *board.Board) Model {
 	ti := textinput.New()
 	ti.Prompt = "title> "
 	ti.CharLimit = 200
-	m := Model{dir: dir, b: b, input: ti, width: 120, height: 40}
-	m.sel = b.Nearest(0, 0)
-	return m
+	return Model{dir: dir, b: b, input: ti, width: 120, height: 40}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -73,7 +74,58 @@ func (m *Model) save() {
 	}
 }
 
-func (m *Model) selected() *board.Node { return m.b.Node(m.sel) }
+// selected is the node under the cursor, if any.
+func (m *Model) selected() *board.Node { return m.b.At(m.row, m.col) }
+
+func (m *Model) lastRow() int { return m.b.MaxRow() + bufferRows }
+
+func (m *Model) moveCursor(d board.Dir) {
+	switch d {
+	case board.Left:
+		m.col = max(m.col-1, 0)
+	case board.Right:
+		m.col = min(m.col+1, board.Cols-1)
+	case board.Up:
+		m.row = max(m.row-1, 0)
+	case board.Down:
+		m.row = min(m.row+1, m.lastRow())
+	}
+}
+
+func (m *Model) cursorTo(n *board.Node) {
+	if n != nil {
+		m.row, m.col = n.Row, n.Col
+	}
+}
+
+func (m *Model) clampCursor() {
+	m.row = max(0, min(m.row, m.lastRow()))
+	m.col = max(0, min(m.col, board.Cols-1))
+}
+
+// jump moves the cursor to the next (step 1) or previous (step -1) node in
+// reading order, which skips across empty stretches of the board.
+func (m *Model) jump(step int) {
+	nodes := m.b.Clone()
+	nodes.Sort()
+	pos := func(n board.Node) int { return n.Row*board.Cols + n.Col }
+	cur := m.row*board.Cols + m.col
+	if step > 0 {
+		for _, n := range nodes.Nodes {
+			if pos(n) > cur {
+				m.cursorTo(&n)
+				return
+			}
+		}
+	} else {
+		for i := len(nodes.Nodes) - 1; i >= 0; i-- {
+			if pos(nodes.Nodes[i]) < cur {
+				m.cursorTo(&nodes.Nodes[i])
+				return
+			}
+		}
+	}
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
@@ -134,26 +186,24 @@ func dirOf(k string) (board.Dir, bool) {
 	return 0, false
 }
 
-func (m *Model) navigate(d board.Dir) {
-	if next := m.b.Neighbor(m.sel, d); next != "" {
-		m.sel = next
-	}
-}
-
 func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
 	if d, ok := dirOf(key); ok {
-		m.navigate(d)
+		m.moveCursor(d)
 		return nil
 	}
 	n := m.selected()
 	switch key {
 	case "q", "ctrl+c":
 		return tea.Quit
+	case "w":
+		m.jump(1)
+	case "b":
+		m.jump(-1)
 	case "g":
-		m.sel = m.b.Nearest(0, 0)
+		m.row, m.col = 0, 0
 	case "G":
-		m.sel = m.b.Nearest(m.b.MaxRow(), board.Cols-1)
+		m.row, m.col = max(m.b.MaxRow(), 0), 0
 	case "o", "O", "a", "n":
 		return m.startNew(key)
 	case "i":
@@ -167,12 +217,13 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		m.moveOrig = m.b.Clone()
+		m.moveID = n.ID
 		m.mode = modeMove
 	case "c":
 		if n == nil {
 			return nil
 		}
-		m.connFrom = m.sel
+		m.connFrom = n.ID
 		m.mode = modeConnect
 	case " ":
 		if n == nil {
@@ -188,10 +239,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		if n == nil {
 			return nil
 		}
-		row, col := n.Row, n.Col
 		m.checkpoint()
-		_ = m.b.Delete(m.sel)
-		m.sel = m.b.Nearest(row, col)
+		_ = m.b.Delete(n.ID)
 		m.save()
 	case "u":
 		m.history(&m.undo, &m.redo, "undo")
@@ -210,31 +259,30 @@ func (m *Model) history(from, to *[]*board.Board, label string) {
 	*from = (*from)[:len(*from)-1]
 	*to = append(*to, m.b.Clone())
 	m.b = last
-	if m.b.Node(m.sel) == nil {
-		m.sel = m.b.Nearest(0, 0)
-	}
+	m.clampCursor()
 	m.save()
 }
 
 // startNew creates an untitled node right away (so it shows on the board)
-// and asks for its title. Esc on the prompt discards it again.
+// and asks for its title. Esc on the prompt discards it again. On an empty
+// cell every add key drops the node right there.
 func (m *Model) startNew(key string) tea.Cmd {
 	now := time.Now()
 	nn := board.Node{ID: board.NewID(now), CreatedAt: now}
-	m.prevSel = m.sel
+	m.prevCur = [2]int{m.row, m.col}
 	m.checkpoint()
 	cur := m.selected()
 	switch {
 	case cur == nil:
-		m.b.Add(nn, 0, 0)
+		m.b.Add(nn, m.row, m.col)
 	case key == "o":
-		_ = m.b.InsertAfter(m.sel, nn)
+		_ = m.b.InsertAfter(cur.ID, nn)
 	case key == "O":
-		_ = m.b.InsertBefore(m.sel, nn)
+		_ = m.b.InsertBefore(cur.ID, nn)
 	default:
 		m.b.Add(nn, cur.Row, cur.Col)
 	}
-	m.sel = nn.ID
+	m.cursorTo(m.b.Node(nn.ID))
 	m.inputNew = true
 	return m.startInput("")
 }
@@ -286,21 +334,22 @@ func (m *Model) discardNew() {
 		m.b = m.undo[len(m.undo)-1]
 		m.undo = m.undo[:len(m.undo)-1]
 	}
-	m.sel = m.prevSel
+	m.row, m.col = m.prevCur[0], m.prevCur[1]
 }
 
 func (m *Model) keyMove(k tea.KeyMsg) {
 	key := k.String()
 	if d, ok := dirOf(key); ok {
-		if !m.b.MoveStep(m.sel, d) {
+		if !m.b.MoveStep(m.moveID, d) {
 			m.msg = "can't move there"
 		}
+		m.cursorTo(m.b.Node(m.moveID))
 		return
 	}
 	switch key {
 	case "enter", "m":
 		m.mode = modeNormal
-		orig, cur := m.moveOrig.Node(m.sel), m.selected()
+		orig, cur := m.moveOrig.Node(m.moveID), m.b.Node(m.moveID)
 		if orig.Row != cur.Row || orig.Col != cur.Col {
 			m.undo = append(m.undo, m.moveOrig)
 			m.redo = nil
@@ -309,30 +358,38 @@ func (m *Model) keyMove(k tea.KeyMsg) {
 	case "esc", "ctrl+c":
 		m.mode = modeNormal
 		m.b = m.moveOrig
+		m.cursorTo(m.b.Node(m.moveID))
 	}
 }
 
 func (m *Model) keyConnect(k tea.KeyMsg) {
 	key := k.String()
 	if d, ok := dirOf(key); ok {
-		m.navigate(d)
+		m.moveCursor(d)
 		return
 	}
 	switch key {
 	case "enter", "c":
+		target := m.selected()
+		if target == nil {
+			m.msg = "no node here — pick a node to connect to"
+			return
+		}
 		m.mode = modeNormal
-		if m.sel == m.connFrom {
+		if target.ID == m.connFrom {
 			return
 		}
 		m.checkpoint()
-		added, err := m.b.ToggleEdge(m.connFrom, m.sel)
+		added, err := m.b.ToggleEdge(m.connFrom, target.ID)
 		if err != nil {
 			m.b = m.undo[len(m.undo)-1]
 			m.undo = m.undo[:len(m.undo)-1]
 			m.msg = err.Error()
-			m.sel = m.connFrom
+			m.cursorTo(m.b.Node(m.connFrom))
 			return
 		}
+		// A same-row connection pushes the target down; follow it.
+		m.cursorTo(m.b.Node(target.ID))
 		if added {
 			m.msg = "connected"
 		} else {
@@ -341,7 +398,7 @@ func (m *Model) keyConnect(k tea.KeyMsg) {
 		m.save()
 	case "esc", "ctrl+c":
 		m.mode = modeNormal
-		m.sel = m.connFrom
+		m.cursorTo(m.b.Node(m.connFrom))
 	}
 }
 
@@ -369,13 +426,8 @@ func (m *Model) toggleDone() {
 func (m *Model) bodyHeight() int { return max(m.height-2, 1) }
 
 func (m *Model) ensureVisible() {
-	n := m.selected()
-	if n == nil {
-		m.scroll = 0
-		return
-	}
 	l := newLayout(m.b, m.width)
-	top := l.rowY[n.Row]
+	top := l.rowY[min(m.row, len(l.rowY)-1)]
 	bottom := top + cardH + 1
 	h := m.bodyHeight()
 	if top < m.scroll {
@@ -395,7 +447,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl move · o/O insert below/above · a add · i rename · m move · c connect · ␣ done · ⏎ open · d delete · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · w/b next/prev node · a add here · o/O insert below/above · i rename · m move · c connect · ␣ done · ⏎ open · d delete · u/^r undo/redo · q quit",
 	modeInput:   "⏎ save · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
@@ -417,24 +469,22 @@ func (m Model) View() string {
 	}
 
 	body := make([]string, m.bodyHeight())
-	if len(m.b.Nodes) == 0 {
-		body[0] = dimStyle.Render("  empty board — press a to add the first node")
-	} else {
-		l := newLayout(m.b, m.width)
-		m.refreshRoutes() // no-op unless View runs before the first Update
-		target, moving := "", ""
-		sel := m.sel
-		switch m.mode {
-		case modeConnect:
-			target, sel = m.sel, m.connFrom
-		case modeMove:
-			moving = m.sel
-		}
-		cv := renderBoard(m.b, l, m.routes, sel, target, moving)
-		for i := range body {
-			if y := m.scroll + i; y < cv.h {
-				body[i] = cv.line(y)
-			}
+	l := newLayout(m.b, m.width)
+	m.refreshRoutes() // no-op unless View runs before the first Update
+	v := view{cursorRow: m.row, cursorCol: m.col, cursorSt: stBorderSel}
+	if n := m.selected(); n != nil {
+		v.lit = n.ID
+	}
+	switch m.mode {
+	case modeConnect:
+		v.cursorSt, v.anchor, v.lit = stBorderTarget, m.connFrom, m.connFrom
+	case modeMove:
+		v.cursorSt = stBorderMove
+	}
+	cv := renderBoard(m.b, l, m.routes, v)
+	for i := range body {
+		if y := m.scroll + i; y < cv.h {
+			body[i] = cv.line(y)
 		}
 	}
 
