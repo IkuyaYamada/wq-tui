@@ -54,9 +54,8 @@ func (d Dir) delta() (dr, dc int) {
 }
 
 var (
-	ErrRowNotEmpty = errors.New("row is not empty")
-	ErrNotFound    = errors.New("node not found")
-	ErrSelf        = errors.New("cannot connect a node to itself")
+	ErrNotFound = errors.New("node not found")
+	ErrSelf     = errors.New("cannot connect a node to itself")
 )
 
 func (b *Board) Clone() *Board {
@@ -213,20 +212,24 @@ func (b *Board) InsertBefore(id string, n Node) error {
 	return nil
 }
 
-// DeleteRow removes an empty row, pulling every row below it up by one.
-// Relative row order is unchanged, so every edge still points down.
-func (b *Board) DeleteRow(row int) error {
+// DeleteRow removes a row: its nodes are deleted (bridging simple chains as
+// Delete does) and every row below is pulled up by one. Relative row order
+// is unchanged, so every edge still points down.
+func (b *Board) DeleteRow(row int) {
+	var ids []string
 	for _, n := range b.Nodes {
 		if n.Row == row {
-			return ErrRowNotEmpty
+			ids = append(ids, n.ID)
 		}
+	}
+	for _, id := range ids {
+		_ = b.Delete(id)
 	}
 	for i := range b.Nodes {
 		if b.Nodes[i].Row > row {
 			b.Nodes[i].Row--
 		}
 	}
-	return nil
 }
 
 // Delete removes id and its edges. A node with exactly one incoming and one

@@ -131,7 +131,7 @@ func TestBufferRowsAcceptNewNodes(t *testing.T) {
 	}
 
 	// Deleting leaves the cursor on the now-empty cell.
-	m = press(t, m, "d")
+	m = press(t, m, "x")
 	if m.row != 5 || m.col != 1 || m.selected() != nil {
 		t.Errorf("after delete cursor %d,%d on %v", m.row, m.col, m.selected())
 	}
@@ -275,21 +275,31 @@ func TestFullWidthKeysWorkOnBoard(t *testing.T) {
 	}
 }
 
-func TestDeleteEmptyRowWithD(t *testing.T) {
+func TestDeleteRowWithDDAndD(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{})
-	m = press(t, m, "a", "上", "<enter>", "j", "j", "j", "a", "下", "<enter>")
-	// Rows 1 and 2 are empty; D twice from row 1 closes the gap.
-	m = press(t, m, "k", "k", "D", "D")
-	if got := titles(m.b)["下"]; got != [2]int{1, 0} {
-		t.Fatalf("下 at %v", got)
-	}
-	// On a row with a node, D refuses.
-	m = press(t, m, "D")
-	if got := titles(m.b)["下"]; got != [2]int{1, 0} || m.msg == "" {
-		t.Errorf("D on occupied row: %v msg %q", got, m.msg)
-	}
-	m = press(t, m, "u")
+	m = press(t, m, "a", "上", "<enter>", "o", "中", "<enter>", "j", "j", "a", "下", "<enter>")
+	// Rows: 上 0, 中 1, (2 empty), 下 3. dd on the empty row closes the gap.
+	m = press(t, m, "k", "d", "d")
 	if got := titles(m.b)["下"]; got != [2]int{2, 0} {
-		t.Errorf("undo one D: %v", got)
+		t.Fatalf("dd on empty row: 下 at %v", got)
+	}
+	// D on 中's row deletes 中 with it.
+	m = press(t, m, "k", "D")
+	got := titles(m.b)
+	if _, ok := got["中"]; ok || got["下"] != [2]int{1, 0} {
+		t.Fatalf("D on occupied row: %v", got)
+	}
+	// A lone d followed by another key does nothing; x deletes one node.
+	m = press(t, m, "d", "j")
+	if len(m.b.Nodes) != 2 || m.row != 1 {
+		t.Errorf("d then j: %d nodes, cursor row %d", len(m.b.Nodes), m.row)
+	}
+	m = press(t, m, "x")
+	if len(m.b.Nodes) != 1 {
+		t.Errorf("x: %d nodes", len(m.b.Nodes))
+	}
+	m = press(t, m, "u", "u")
+	if _, ok := titles(m.b)["中"]; !ok {
+		t.Errorf("undo should bring 中 back: %v", titles(m.b))
 	}
 }

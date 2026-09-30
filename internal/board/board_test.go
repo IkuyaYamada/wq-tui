@@ -152,17 +152,22 @@ func TestMoveGroupKeepsShape(t *testing.T) {
 }
 
 func TestDeleteRowPullsRowsUp(t *testing.T) {
-	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 3, 1)}, Edges: []Edge{{"A", "B"}}}
-	if err := b.DeleteRow(0); err != ErrRowNotEmpty {
-		t.Errorf("non-empty row: err = %v", err)
+	b := &Board{
+		Nodes: []Node{node("A", 0, 0), node("B", 1, 0), node("C", 3, 1)},
+		Edges: []Edge{{"A", "B"}, {"B", "C"}},
 	}
-	if err := b.DeleteRow(1); err != nil {
-		t.Fatal(err)
+	b.DeleteRow(1)
+	if b.Node("B") != nil {
+		t.Error("B should be deleted with its row")
 	}
-	if got := pos(t, b, "B"); got != [2]int{2, 1} {
-		t.Errorf("B at %v", got)
+	if got := pos(t, b, "C"); got != [2]int{2, 1} {
+		t.Errorf("C at %v", got)
 	}
-	if got := pos(t, b, "A"); got != [2]int{0, 0} {
-		t.Errorf("A should stay, at %v", got)
+	if !b.HasEdge("A", "C") {
+		t.Errorf("A → B → C should bridge to A → C: %v", b.Edges)
+	}
+	b.DeleteRow(1)
+	if got := pos(t, b, "C"); got != [2]int{1, 1} {
+		t.Errorf("empty row: C at %v", got)
 	}
 }
