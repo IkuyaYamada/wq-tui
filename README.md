@@ -34,7 +34,8 @@ Plain files, so the directory can be a git repo of its own.
 | `o` / `O` | Insert a node below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B) |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
-| `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge |
+| `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it |
+| `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
 | `Space` | Toggle done (logged to the thread) |
 | `Enter` | Open in vim |
 | `d` / `x` | Delete (A → B → C is bridged to A → C) |

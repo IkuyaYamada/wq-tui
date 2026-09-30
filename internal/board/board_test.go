@@ -129,3 +129,24 @@ func TestNearestEmpty(t *testing.T) {
 		t.Errorf("full row: got %d,%d", r, c)
 	}
 }
+
+func TestMoveGroupKeepsShape(t *testing.T) {
+	b := &Board{
+		Nodes: []Node{node("A", 0, 0), node("B", 1, 0), node("X", 0, 1), node("Y", 3, 0)},
+		Edges: []Edge{{"A", "B"}, {"B", "Y"}},
+	}
+	// X blocks the right step, so the pair hops two columns together.
+	if !b.MoveGroup([]string{"A", "B"}, Right) {
+		t.Fatal("move right failed")
+	}
+	if pos(t, b, "A") != [2]int{0, 2} || pos(t, b, "B") != [2]int{1, 2} {
+		t.Errorf("A %v B %v", pos(t, b, "A"), pos(t, b, "B"))
+	}
+	// One step down is fine; a second would put B level with its successor Y.
+	if !b.MoveGroup([]string{"A", "B"}, Down) {
+		t.Fatal("move down failed")
+	}
+	if b.MoveGroup([]string{"A", "B"}, Down) {
+		t.Errorf("B moved onto Y's row: %v", pos(t, b, "B"))
+	}
+}

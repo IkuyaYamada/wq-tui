@@ -165,3 +165,57 @@ func TestUnusedThreadStampIsDropped(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestVisualSelectMovesNodesTogether(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	// 設計 → 実装 in column 0, 雑務 at (0,1).
+	m = press(t, m, "a", "設計", "<enter>", "o", "実装", "<enter>", "g", "l", "a", "雑務", "<enter>")
+
+	// Block-select column 0 only (rows 0-1), then slide it right: 雑務 is
+	// in the way on row 0, so the pair hops to column 2.
+	m = press(t, m, "h", "v", "j", "m", "l", "<enter>")
+	got := titles(m.b)
+	if got["設計"] != [2]int{0, 2} || got["実装"] != [2]int{1, 2} || got["雑務"] != [2]int{0, 1} {
+		t.Fatalf("after block move: %v", got)
+	}
+	if m.row != 1 || m.col != 2 {
+		t.Errorf("cursor should ride along, at %d,%d", m.row, m.col)
+	}
+
+	// V selects whole rows: push both rows down one.
+	m = press(t, m, "g", "V", "j", "m", "j", "<enter>")
+	got = titles(m.b)
+	if got["設計"] != [2]int{1, 2} || got["雑務"] != [2]int{1, 1} || got["実装"] != [2]int{2, 2} {
+		t.Fatalf("after row move: %v", got)
+	}
+
+	// One undo reverts the whole group move.
+	m = press(t, m, "u")
+	if got := titles(m.b); got["設計"] != [2]int{0, 2} || got["雑務"] != [2]int{0, 1} {
+		t.Errorf("undo: %v", got)
+	}
+
+	// Visual d deletes every selected node.
+	m = press(t, m, "g", "V", "d")
+	if len(m.b.Nodes) != 1 {
+		t.Errorf("visual delete left %d nodes", len(m.b.Nodes))
+	}
+}
+
+func TestDisconnectFromLowerNode(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "上", "<enter>", "o", "下", "<enter>")
+	if len(m.b.Edges) != 1 {
+		t.Fatalf("edges %v", m.b.Edges)
+	}
+	// Cursor is on 下; connect mode, pick 上, Enter removes the edge.
+	m = press(t, m, "c", "k", "<enter>")
+	if len(m.b.Edges) != 0 || m.msg != "disconnected" {
+		t.Errorf("edges %v msg %q", m.b.Edges, m.msg)
+	}
+	// The cursor followed to 上; connecting back down restores the edge.
+	m = press(t, m, "c", "j", "<enter>")
+	if !hasEdge(m.b, "上", "下") {
+		t.Errorf("reconnect: %v", m.b.Edges)
+	}
+}

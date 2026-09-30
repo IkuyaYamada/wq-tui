@@ -22,6 +22,7 @@ const (
 	modeInput
 	modeMove
 	modeConnect
+	modeVisual
 )
 
 const maxUndo = 200
@@ -39,9 +40,15 @@ type Model struct {
 	input    textinput.Model
 	inputNew bool   // the node being titled was just created; Esc discards it
 	prevCur  [2]int // cursor to restore when a new node is discarded
-	moveID   string
+	moveIDs  []string
 	moveOrig *board.Board
-	connFrom string
+	moveCur  [2]int
+
+	// Visual mode selects the rectangle between visAnchor and the cursor,
+	// or whole rows when visLine is set.
+	visAnchor [2]int
+	visLine   bool
+	connFrom  string
 
 	width, height int
 	scroll        int
@@ -153,6 +160,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keyMove(msg)
 		case modeConnect:
 			m.keyConnect(msg)
+		case modeVisual:
+			m.keyVisual(msg)
 		}
 	default:
 		if m.mode == modeInput {
@@ -230,9 +239,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		if n == nil {
 			return nil
 		}
-		m.moveOrig = m.b.Clone()
-		m.moveID = n.ID
-		m.mode = modeMove
+		m.startMove([]string{n.ID})
 	case "c":
 		if n == nil {
 			return nil
@@ -249,6 +256,10 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		return openEditor(m.dir, *n)
+	case "v", "V":
+		m.mode = modeVisual
+		m.visAnchor = [2]int{m.row, m.col}
+		m.visLine = key == "V"
 	case "d", "x":
 		if n == nil {
 			return nil
@@ -351,19 +362,32 @@ func (m *Model) discardNew() {
 	m.row, m.col = m.prevCur[0], m.prevCur[1]
 }
 
+func (m *Model) startMove(ids []string) {
+	m.moveOrig = m.b.Clone()
+	m.moveIDs = ids
+	m.moveCur = [2]int{m.row, m.col}
+	m.mode = modeMove
+}
+
+// keyMove slides the moving nodes as one block; the cursor rides along.
 func (m *Model) keyMove(k tea.KeyMsg) {
 	key := k.String()
 	if d, ok := dirOf(key); ok {
-		if !m.b.MoveStep(m.moveID, d) {
+		ref := m.b.Node(m.moveIDs[0])
+		r0, c0 := ref.Row, ref.Col
+		if !m.b.MoveGroup(m.moveIDs, d) {
 			m.msg = "can't move there"
+			return
 		}
-		m.cursorTo(m.b.Node(m.moveID))
+		ref = m.b.Node(m.moveIDs[0])
+		m.row += ref.Row - r0
+		m.col += ref.Col - c0
 		return
 	}
 	switch key {
 	case "enter", "m":
 		m.mode = modeNormal
-		orig, cur := m.moveOrig.Node(m.moveID), m.b.Node(m.moveID)
+		orig, cur := m.moveOrig.Node(m.moveIDs[0]), m.b.Node(m.moveIDs[0])
 		if orig.Row != cur.Row || orig.Col != cur.Col {
 			m.undo = append(m.undo, m.moveOrig)
 			m.redo = nil
@@ -372,7 +396,59 @@ func (m *Model) keyMove(k tea.KeyMsg) {
 	case "esc", "ctrl+c":
 		m.mode = modeNormal
 		m.b = m.moveOrig
-		m.cursorTo(m.b.Node(m.moveID))
+		m.row, m.col = m.moveCur[0], m.moveCur[1]
+	}
+}
+
+// visualIDs lists the nodes inside the visual selection.
+func (m *Model) visualIDs() []string {
+	r0, r1 := min(m.visAnchor[0], m.row), max(m.visAnchor[0], m.row)
+	c0, c1 := min(m.visAnchor[1], m.col), max(m.visAnchor[1], m.col)
+	if m.visLine {
+		c0, c1 = 0, board.Cols-1
+	}
+	var ids []string
+	for _, n := range m.b.Nodes {
+		if n.Row >= r0 && n.Row <= r1 && n.Col >= c0 && n.Col <= c1 {
+			ids = append(ids, n.ID)
+		}
+	}
+	return ids
+}
+
+func (m *Model) keyVisual(k tea.KeyMsg) {
+	key := k.String()
+	if d, ok := dirOf(key); ok {
+		m.moveCursor(d)
+		return
+	}
+	switch key {
+	case "v", "V":
+		if m.visLine == (key == "V") {
+			m.mode = modeNormal
+		} else {
+			m.visLine = key == "V"
+		}
+	case "m":
+		ids := m.visualIDs()
+		if len(ids) == 0 {
+			m.msg = "no nodes selected"
+			return
+		}
+		m.startMove(ids)
+	case "d", "x":
+		ids := m.visualIDs()
+		m.mode = modeNormal
+		if len(ids) == 0 {
+			return
+		}
+		m.checkpoint()
+		for _, id := range ids {
+			_ = m.b.Delete(id)
+		}
+		m.save()
+	case "esc", "ctrl+c":
+		m.mode = modeNormal
 	}
 }
 
@@ -461,10 +537,11 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · w/b next/prev node · a add here · o/O insert below/above · i rename · m move · c connect · ␣ done · ⏎ open · d delete · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · w/b next/prev node · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · d delete · u/^r undo/redo · q quit",
 	modeInput:   "⏎ save · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
+	modeVisual:  "hjkl extend · m move together · d delete · v block / V rows · esc cancel",
 }
 
 func (m Model) View() string {
@@ -480,6 +557,12 @@ func (m Model) View() string {
 		header += "  " + modeStyle.Background(lipgloss.Color("81")).Render(" MOVE ")
 	case modeConnect:
 		header += "  " + modeStyle.Background(lipgloss.Color("220")).Render(" CONNECT ")
+	case modeVisual:
+		label := " VISUAL "
+		if m.visLine {
+			label = " VISUAL LINE "
+		}
+		header += "  " + modeStyle.Background(lipgloss.Color("141")).Render(label)
 	}
 
 	body := make([]string, m.bodyHeight())
@@ -494,6 +577,9 @@ func (m Model) View() string {
 		v.cursorSt, v.anchor, v.lit = stBorderTarget, m.connFrom, m.connFrom
 	case modeMove:
 		v.cursorSt = stBorderMove
+		v.marked = setOf(m.moveIDs)
+	case modeVisual:
+		v.marked = setOf(m.visualIDs())
 	}
 	cv := renderBoard(m.b, l, m.routes, v)
 	for i := range body {
@@ -512,4 +598,12 @@ func (m Model) View() string {
 		footer = dimStyle.Render(runewidth.Truncate(help[m.mode], max(m.width-1, 1), "…"))
 	}
 	return header + "\n" + strings.Join(body, "\n") + "\n" + footer
+}
+
+func setOf(ids []string) map[string]bool {
+	out := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
 }

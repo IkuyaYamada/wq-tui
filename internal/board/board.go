@@ -274,44 +274,70 @@ func (b *Board) ToggleEdge(from, to string) (added bool, err error) {
 	return true, nil
 }
 
-// edgesAllow reports whether id could sit on row without any of its edges
-// turning flat or upward.
-func (b *Board) edgesAllow(id string, row int) bool {
-	for _, p := range b.Preds(id) {
-		if b.Node(p).Row >= row {
-			return false
-		}
-	}
-	for _, s := range b.Succs(id) {
-		if b.Node(s).Row <= row {
-			return false
-		}
-	}
-	return true
-}
-
 // MoveStep slides id to the first empty cell in direction d, hopping over
 // occupied cells. It refuses moves that would break an edge's direction.
 func (b *Board) MoveStep(id string, d Dir) bool {
-	n := b.Node(id)
-	if n == nil {
+	return b.MoveGroup([]string{id}, d)
+}
+
+// MoveGroup slides ids together, keeping their shape, by the smallest number
+// of steps in direction d that lands every one of them on a cell not taken
+// by a node outside the group. It refuses moves that leave the grid or turn
+// an edge between the group and the rest flat or upward.
+func (b *Board) MoveGroup(ids []string, d Dir) bool {
+	in := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if b.Node(id) == nil {
+			return false
+		}
+		in[id] = true
+	}
+	if len(in) == 0 {
 		return false
+	}
+	taken := map[[2]int]bool{}
+	for _, n := range b.Nodes {
+		if !in[n.ID] {
+			taken[[2]int{n.Row, n.Col}] = true
+		}
 	}
 	dr, dc := d.delta()
 	limit := b.MaxRow() + 1
-	r, c := n.Row, n.Col
-	for {
-		r, c = r+dr, c+dc
-		if c < 0 || c >= Cols || r < 0 || r > limit {
-			return false
+	for k := 1; ; k++ {
+		fits := true
+		for _, n := range b.Nodes {
+			if !in[n.ID] {
+				continue
+			}
+			r, c := n.Row+dr*k, n.Col+dc*k
+			if c < 0 || c >= Cols || r < 0 || r > limit+k*max(dr, 0) {
+				return false
+			}
+			if taken[[2]int{r, c}] {
+				fits = false
+			}
 		}
-		if o := b.At(r, c); o != nil && o.ID != id {
+		if !fits {
 			continue
 		}
-		if !b.edgesAllow(id, r) {
-			return false
+		row := func(id string) int {
+			n := b.Node(id)
+			if in[id] {
+				return n.Row + dr*k
+			}
+			return n.Row
 		}
-		n.Row, n.Col = r, c
+		for _, e := range b.Edges {
+			if in[e.From] != in[e.To] && row(e.From) >= row(e.To) {
+				return false
+			}
+		}
+		for i := range b.Nodes {
+			if in[b.Nodes[i].ID] {
+				b.Nodes[i].Row += dr * k
+				b.Nodes[i].Col += dc * k
+			}
+		}
 		return true
 	}
 }

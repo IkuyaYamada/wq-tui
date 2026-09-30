@@ -242,6 +242,7 @@ type view struct {
 	cursorSt             style
 	anchor               string
 	lit                  string
+	marked               map[string]bool // multi-selection (visual / group move)
 }
 
 // renderBoard draws every card, the cursor and the routed edges.
@@ -260,6 +261,8 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		case n.Row == v.cursorRow && n.Col == v.cursorCol:
 			border, title, bold = v.cursorSt, stTitleSel, true
 			onCursor = true
+		case v.marked[n.ID]:
+			border, title, bold = stBorderMove, stTitleSel, true
 		case n.ID == v.anchor:
 			border, title, bold = stBorderSel, stTitleSel, true
 		case n.Done:
