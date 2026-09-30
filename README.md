@@ -31,7 +31,7 @@ Plain files, so the directory can be a git repo of its own.
 | `w` / `b` | Jump to the next / previous node |
 | `g` / `G` | Top / last row with nodes |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
-| `o` / `O` | Insert a node below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). `O` uses the free cell above when it can and only pushes rows down when it must |
+| `o` / `O` | Insert a node below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). `O` only fills the free cell above and never moves other rows; it reports an error when that cell is taken, on the top row, or when an incoming node sits on that row |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it |

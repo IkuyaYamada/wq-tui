@@ -303,3 +303,14 @@ func TestDeleteRowWithDDAndD(t *testing.T) {
 		t.Errorf("undo should bring 中 back: %v", titles(m.b))
 	}
 }
+
+func TestOReportsWhenThereIsNoRoomAbove(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "一番上", "<enter>", "O")
+	if m.mode != modeNormal || len(m.b.Nodes) != 1 || m.msg == "" {
+		t.Errorf("mode %v nodes %d msg %q", m.mode, len(m.b.Nodes), m.msg)
+	}
+	if len(m.undo) != 1 {
+		t.Errorf("refused O should not leave an undo step: %d", len(m.undo))
+	}
+}

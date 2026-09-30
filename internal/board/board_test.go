@@ -38,15 +38,12 @@ func TestInsertAfterTakesOverOutgoingEdges(t *testing.T) {
 }
 
 func TestInsertBeforeTakesOverIncomingEdges(t *testing.T) {
-	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 0, 1), node("C", 1, 0)}, Edges: []Edge{{"A", "C"}, {"B", "C"}}}
+	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 0, 1), node("C", 2, 0)}, Edges: []Edge{{"A", "C"}, {"B", "C"}}}
 	if err := b.InsertBefore("C", node("N", 0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if got := pos(t, b, "N"); got != [2]int{1, 0} {
 		t.Errorf("N at %v", got)
-	}
-	if got := pos(t, b, "C"); got != [2]int{2, 0} {
-		t.Errorf("C at %v", got)
 	}
 	for _, e := range []Edge{{"A", "N"}, {"B", "N"}, {"N", "C"}} {
 		if !b.HasEdge(e.From, e.To) {
@@ -190,11 +187,22 @@ func TestInsertBeforeUsesFreeCellAbove(t *testing.T) {
 		t.Errorf("edges %v", b.Edges)
 	}
 
-	// A predecessor on the row right above (another column) leaves no room:
-	// fall back to pushing rows down.
-	b = &Board{Nodes: []Node{node("P", 1, 3), node("B", 2, 0)}, Edges: []Edge{{"P", "B"}}}
-	b.InsertBefore("B", node("N", 0, 0))
-	if pos(t, b, "N") != [2]int{2, 0} || pos(t, b, "B") != [2]int{3, 0} {
-		t.Errorf("fallback: N %v B %v", pos(t, b, "N"), pos(t, b, "B"))
+	// No room above: refuse and leave the board untouched.
+	cases := []struct {
+		b    *Board
+		want error
+	}{
+		{&Board{Nodes: []Node{node("B", 0, 0)}}, ErrTopRow},
+		{&Board{Nodes: []Node{node("X", 1, 0), node("B", 2, 0)}}, ErrAboveTaken},
+		{&Board{Nodes: []Node{node("P", 1, 3), node("B", 2, 0)}, Edges: []Edge{{"P", "B"}}}, ErrPredAbove},
+	}
+	for _, c := range cases {
+		before := len(c.b.Nodes)
+		if err := c.b.InsertBefore("B", node("N", 0, 0)); err != c.want {
+			t.Errorf("err = %v, want %v", err, c.want)
+		}
+		if len(c.b.Nodes) != before {
+			t.Errorf("board changed on error")
+		}
 	}
 }

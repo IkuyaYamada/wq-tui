@@ -358,7 +358,11 @@ func (m *Model) startNew(key string) tea.Cmd {
 	case key == "o":
 		_ = m.b.InsertAfter(cur.ID, nn)
 	case key == "O":
-		_ = m.b.InsertBefore(cur.ID, nn)
+		if err := m.b.InsertBefore(cur.ID, nn); err != nil {
+			m.undo = m.undo[:len(m.undo)-1]
+			m.msg = err.Error()
+			return nil
+		}
 	default:
 		m.b.Add(nn, cur.Row, cur.Col)
 	}

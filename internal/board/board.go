@@ -54,8 +54,11 @@ func (d Dir) delta() (dr, dc int) {
 }
 
 var (
-	ErrNotFound = errors.New("node not found")
-	ErrSelf     = errors.New("cannot connect a node to itself")
+	ErrNotFound   = errors.New("node not found")
+	ErrTopRow     = errors.New("no row above the top row")
+	ErrAboveTaken = errors.New("the cell above is taken")
+	ErrPredAbove  = errors.New("an incoming node sits on the row above; its edge would go sideways")
+	ErrSelf       = errors.New("cannot connect a node to itself")
 )
 
 func (b *Board) Clone() *Board {
@@ -192,22 +195,19 @@ func (b *Board) InsertAfter(id string, n Node) error {
 	return nil
 }
 
-// InsertBefore places n directly above id and hands id's incoming edges
-// over to n: A → B becomes A → n → B. If the cell above is free and every
-// predecessor sits higher still, nothing else moves; otherwise id and every
-// lower row are pushed down by one to make room.
+// InsertBefore places n in the free cell directly above id and hands id's
+// incoming edges over to n: A → B becomes A → n → B. Nothing else moves; if
+// that cell cannot take n, it returns an error instead of making room.
 func (b *Board) InsertBefore(id string, n Node) error {
 	t := b.Node(id)
 	if t == nil {
 		return ErrNotFound
 	}
 	row, col := t.Row, t.Col
-	if b.roomAbove(id, row, col) {
-		n.Row, n.Col = row-1, col
-	} else {
-		b.shiftRows(row)
-		n.Row, n.Col = row, col
+	if err := b.roomAbove(id, row, col); err != nil {
+		return err
 	}
+	n.Row, n.Col = row-1, col
 	for i := range b.Edges {
 		if b.Edges[i].To == id {
 			b.Edges[i].To = n.ID
@@ -218,16 +218,19 @@ func (b *Board) InsertBefore(id string, n Node) error {
 	return nil
 }
 
-func (b *Board) roomAbove(id string, row, col int) bool {
-	if row == 0 || b.At(row-1, col) != nil {
-		return false
+func (b *Board) roomAbove(id string, row, col int) error {
+	switch {
+	case row == 0:
+		return ErrTopRow
+	case b.At(row-1, col) != nil:
+		return ErrAboveTaken
 	}
 	for _, p := range b.Preds(id) {
 		if b.Node(p).Row >= row-1 {
-			return false
+			return ErrPredAbove
 		}
 	}
-	return true
+	return nil
 }
 
 // DeleteRow removes a row: its nodes are deleted (bridging simple chains as
