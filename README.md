@@ -39,6 +39,7 @@ Plain files, so the directory can be a git repo of its own.
 | `Space` | Toggle done (logged to the thread) |
 | `Enter` | Open in vim |
 | `d` / `x` | Delete (A → B → C is bridged to A → C) |
+| `D` | Delete the empty row under the cursor, pulling the rows below up |
 | `u` / `Ctrl+r` | Undo / redo |
 | `q` | Quit |
 

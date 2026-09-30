@@ -274,3 +274,22 @@ func TestFullWidthKeysWorkOnBoard(t *testing.T) {
 		t.Errorf("full-width k / ideographic space not recognised: %+v", n)
 	}
 }
+
+func TestDeleteEmptyRowWithD(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "上", "<enter>", "j", "j", "j", "a", "下", "<enter>")
+	// Rows 1 and 2 are empty; D twice from row 1 closes the gap.
+	m = press(t, m, "k", "k", "D", "D")
+	if got := titles(m.b)["下"]; got != [2]int{1, 0} {
+		t.Fatalf("下 at %v", got)
+	}
+	// On a row with a node, D refuses.
+	m = press(t, m, "D")
+	if got := titles(m.b)["下"]; got != [2]int{1, 0} || m.msg == "" {
+		t.Errorf("D on occupied row: %v msg %q", got, m.msg)
+	}
+	m = press(t, m, "u")
+	if got := titles(m.b)["下"]; got != [2]int{2, 0} {
+		t.Errorf("undo one D: %v", got)
+	}
+}

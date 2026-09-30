@@ -150,3 +150,19 @@ func TestMoveGroupKeepsShape(t *testing.T) {
 		t.Errorf("B moved onto Y's row: %v", pos(t, b, "B"))
 	}
 }
+
+func TestDeleteRowPullsRowsUp(t *testing.T) {
+	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 3, 1)}, Edges: []Edge{{"A", "B"}}}
+	if err := b.DeleteRow(0); err != ErrRowNotEmpty {
+		t.Errorf("non-empty row: err = %v", err)
+	}
+	if err := b.DeleteRow(1); err != nil {
+		t.Fatal(err)
+	}
+	if got := pos(t, b, "B"); got != [2]int{2, 1} {
+		t.Errorf("B at %v", got)
+	}
+	if got := pos(t, b, "A"); got != [2]int{0, 0} {
+		t.Errorf("A should stay, at %v", got)
+	}
+}

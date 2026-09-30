@@ -54,8 +54,9 @@ func (d Dir) delta() (dr, dc int) {
 }
 
 var (
-	ErrNotFound = errors.New("node not found")
-	ErrSelf     = errors.New("cannot connect a node to itself")
+	ErrRowNotEmpty = errors.New("row is not empty")
+	ErrNotFound    = errors.New("node not found")
+	ErrSelf        = errors.New("cannot connect a node to itself")
 )
 
 func (b *Board) Clone() *Board {
@@ -209,6 +210,22 @@ func (b *Board) InsertBefore(id string, n Node) error {
 	}
 	b.Nodes = append(b.Nodes, n)
 	b.Edges = append(b.Edges, Edge{From: n.ID, To: id})
+	return nil
+}
+
+// DeleteRow removes an empty row, pulling every row below it up by one.
+// Relative row order is unchanged, so every edge still points down.
+func (b *Board) DeleteRow(row int) error {
+	for _, n := range b.Nodes {
+		if n.Row == row {
+			return ErrRowNotEmpty
+		}
+	}
+	for i := range b.Nodes {
+		if b.Nodes[i].Row > row {
+			b.Nodes[i].Row--
+		}
+	}
 	return nil
 }
 

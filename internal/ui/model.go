@@ -285,6 +285,17 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		return openEditor(m.dir, *n)
+	case "D":
+		if m.row > m.b.MaxRow() {
+			return nil // buffer rows are already empty and implicit
+		}
+		m.checkpoint()
+		if err := m.b.DeleteRow(m.row); err != nil {
+			m.undo = m.undo[:len(m.undo)-1]
+			m.msg = err.Error() + " — use V then d to delete its nodes"
+			return nil
+		}
+		m.save()
 	case "v", "V":
 		m.mode = modeVisual
 		m.visAnchor = [2]int{m.row, m.col}
@@ -569,7 +580,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · w/b next/prev node · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · d delete · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · w/b next/prev node · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · d delete · D delete empty row · u/^r undo/redo · q quit",
 	modeInput:   "⏎ save · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
