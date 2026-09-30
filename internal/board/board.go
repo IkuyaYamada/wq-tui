@@ -192,16 +192,22 @@ func (b *Board) InsertAfter(id string, n Node) error {
 	return nil
 }
 
-// InsertBefore places n in id's cell, pushes id and every lower row down by
-// one, and hands id's incoming edges over to n: A → B becomes A → n → B.
+// InsertBefore places n directly above id and hands id's incoming edges
+// over to n: A → B becomes A → n → B. If the cell above is free and every
+// predecessor sits higher still, nothing else moves; otherwise id and every
+// lower row are pushed down by one to make room.
 func (b *Board) InsertBefore(id string, n Node) error {
 	t := b.Node(id)
 	if t == nil {
 		return ErrNotFound
 	}
 	row, col := t.Row, t.Col
-	b.shiftRows(row)
-	n.Row, n.Col = row, col
+	if b.roomAbove(id, row, col) {
+		n.Row, n.Col = row-1, col
+	} else {
+		b.shiftRows(row)
+		n.Row, n.Col = row, col
+	}
 	for i := range b.Edges {
 		if b.Edges[i].To == id {
 			b.Edges[i].To = n.ID
@@ -210,6 +216,18 @@ func (b *Board) InsertBefore(id string, n Node) error {
 	b.Nodes = append(b.Nodes, n)
 	b.Edges = append(b.Edges, Edge{From: n.ID, To: id})
 	return nil
+}
+
+func (b *Board) roomAbove(id string, row, col int) bool {
+	if row == 0 || b.At(row-1, col) != nil {
+		return false
+	}
+	for _, p := range b.Preds(id) {
+		if b.Node(p).Row >= row-1 {
+			return false
+		}
+	}
+	return true
 }
 
 // DeleteRow removes a row: its nodes are deleted (bridging simple chains as

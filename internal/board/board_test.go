@@ -171,3 +171,30 @@ func TestDeleteRowPullsRowsUp(t *testing.T) {
 		t.Errorf("empty row: C at %v", got)
 	}
 }
+
+func TestInsertBeforeUsesFreeCellAbove(t *testing.T) {
+	b := &Board{
+		Nodes: []Node{node("A", 0, 0), node("B", 2, 0), node("Z", 3, 4)},
+		Edges: []Edge{{"A", "B"}},
+	}
+	if err := b.InsertBefore("B", node("N", 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if got := pos(t, b, "N"); got != [2]int{1, 0} {
+		t.Errorf("N at %v", got)
+	}
+	if pos(t, b, "B") != [2]int{2, 0} || pos(t, b, "Z") != [2]int{3, 4} {
+		t.Errorf("nothing else should move: B %v Z %v", pos(t, b, "B"), pos(t, b, "Z"))
+	}
+	if !b.HasEdge("A", "N") || !b.HasEdge("N", "B") {
+		t.Errorf("edges %v", b.Edges)
+	}
+
+	// A predecessor on the row right above (another column) leaves no room:
+	// fall back to pushing rows down.
+	b = &Board{Nodes: []Node{node("P", 1, 3), node("B", 2, 0)}, Edges: []Edge{{"P", "B"}}}
+	b.InsertBefore("B", node("N", 0, 0))
+	if pos(t, b, "N") != [2]int{2, 0} || pos(t, b, "B") != [2]int{3, 0} {
+		t.Errorf("fallback: N %v B %v", pos(t, b, "N"), pos(t, b, "B"))
+	}
+}
