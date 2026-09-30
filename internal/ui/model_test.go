@@ -1,14 +1,12 @@
 package ui
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
+	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 // press feeds keys the way a terminal would: named keys in <>, text as runes.
@@ -86,9 +84,9 @@ func TestRhythmicAddConnectComplete(t *testing.T) {
 	if n := m.selected(); !n.Done {
 		t.Errorf("space did not complete %s", n.Title)
 	}
-	thread, _ := os.ReadFile(filepath.Join(board.NodeDir(dir, m.selected().ID), "thread.md"))
-	if !strings.Contains(string(thread), "Completed") {
-		t.Errorf("thread missing completion log: %q", thread)
+	entries, _ := thread.List(board.NodeDir(dir, m.selected().ID))
+	if len(entries) != 1 || entries[0].Summary() != "Completed" {
+		t.Errorf("thread missing completion entry: %+v", entries)
 	}
 
 	m = press(t, m, "u", "u")
@@ -149,21 +147,6 @@ func hasEdge(b *board.Board, from, to string) bool {
 		id[n.Title] = n.ID
 	}
 	return b.HasEdge(id[from], id[to])
-}
-
-func TestUnusedThreadStampIsDropped(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "thread.md")
-	os.WriteFile(path, []byte("old note"), 0o644)
-	add, err := appendThread(path, "## 2026-10-01 10:00\n\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := dropUnused(path, add); err != nil {
-		t.Fatal(err)
-	}
-	if got, _ := os.ReadFile(path); string(got) != "old note" {
-		t.Errorf("got %q", got)
-	}
 }
 
 func TestVisualSelectMovesNodesTogether(t *testing.T) {

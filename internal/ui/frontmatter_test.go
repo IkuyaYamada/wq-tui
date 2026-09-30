@@ -39,14 +39,14 @@ func TestTitleEditedInVimRenamesNode(t *testing.T) {
 	m := New(dir, &board.Board{})
 	m = press(t, m, "a", "仮タイトル", "<enter>")
 	n := *m.selected()
-	strategy, thread, err := nodeFiles(dir, n)
+	strategy, err := strategyPath(dir, n)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Simulate the vim session: the user rewrites the header line.
 	os.WriteFile(strategy, []byte("---\ntitle: 本タイトル\n---\n\n方針\n"), 0o644)
-	next, _ := m.Update(editorDoneMsg{id: n.ID, strategy: strategy, thread: thread})
+	next, _ := m.Update(editorDoneMsg{id: n.ID, strategy: strategy})
 	m = next.(Model)
 	if got := m.selected().Title; got != "本タイトル" {
 		t.Fatalf("title %q", got)
@@ -63,7 +63,7 @@ func TestTitleEditedInVimRenamesNode(t *testing.T) {
 
 	// Blanking the title leaves the node's title alone.
 	os.WriteFile(strategy, []byte("---\ntitle:\n---\n"), 0o644)
-	next, _ = m.Update(editorDoneMsg{id: n.ID, strategy: strategy, thread: thread})
+	next, _ = m.Update(editorDoneMsg{id: n.ID, strategy: strategy})
 	m = next.(Model)
 	if got := m.selected().Title; got != "仮タイトル" {
 		t.Errorf("blank title applied: %q", got)

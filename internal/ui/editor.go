@@ -10,103 +10,85 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
+	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
+// editorDoneMsg reports a finished vim session on either a node's strategy
+// or one thread entry.
 type editorDoneMsg struct {
-	id       string
+	id       string // node whose strategy was edited
 	strategy string
-	thread   string
-	appended string
+	entry    string // thread entry that was edited
+	isNew    bool   // the entry was created for this session
 	err      error
 }
 
-func nodeFiles(dir string, n board.Node) (strategy, thread string, err error) {
+// strategyPath makes sure the node's directory exists and that strategy.md
+// carries the node's current title in its header.
+func strategyPath(dir string, n board.Node) (string, error) {
 	d := board.NodeDir(dir, n.ID)
 	if err := os.MkdirAll(d, 0o755); err != nil {
-		return "", "", err
-	}
-	strategy = filepath.Join(d, "strategy.md")
-	thread = filepath.Join(d, "thread.md")
-	if _, err := os.Stat(strategy); os.IsNotExist(err) {
-		if err := syncStrategyTitle(strategy, n.Title); err != nil {
-			return "", "", err
-		}
-	}
-	if _, err := os.Stat(thread); os.IsNotExist(err) {
-		if err := os.WriteFile(thread, nil, 0o644); err != nil {
-			return "", "", err
-		}
-	}
-	return strategy, thread, nil
-}
-
-// appendThread adds text to the end of thread.md, keeping one blank line
-// between entries, and returns exactly what was written.
-func appendThread(path, text string) (string, error) {
-	cur, err := os.ReadFile(path)
-	if err != nil {
 		return "", err
 	}
-	s := string(cur)
-	sep := ""
-	switch {
-	case s == "":
-	case strings.HasSuffix(s, "\n\n"):
-	case strings.HasSuffix(s, "\n"):
-		sep = "\n"
-	default:
-		sep = "\n\n"
-	}
-	add := sep + text
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	_, err = f.WriteString(add)
-	return add, err
+	path := filepath.Join(d, "strategy.md")
+	return path, syncStrategyTitle(path, n.Title)
 }
 
-// dropUnused removes a timestamp heading that was never written under.
-func dropUnused(path, appended string) error {
-	cur, err := os.ReadFile(path)
+// strategyBody is strategy.md without its header, for display.
+func strategyBody(dir string, n board.Node) string {
+	data, err := os.ReadFile(filepath.Join(board.NodeDir(dir, n.ID), "strategy.md"))
 	if err != nil {
-		return err
+		return ""
 	}
-	if appended == "" || !strings.HasSuffix(string(cur), appended) {
-		return nil
-	}
-	return os.WriteFile(path, cur[:len(cur)-len(appended)], 0o644)
+	_, body, _ := splitFrontmatter(string(data))
+	return strings.Trim(body, "\n")
 }
 
-func stamp() string { return time.Now().Format("2006-01-02 15:04") }
-
-// openEditor opens strategy (left) and thread (right) side by side in vim,
-// with the cursor under a fresh timestamp heading at the end of the thread.
-// The strategy header carries the node's title, so editing it renames the
-// node. Inside this session only, q in normal mode saves and returns.
-func openEditor(dir string, n board.Node) tea.Cmd {
-	strategy, thread, err := nodeFiles(dir, n)
-	if err == nil {
-		err = syncStrategyTitle(strategy, n.Title)
-	}
-	if err != nil {
-		return func() tea.Msg { return editorDoneMsg{err: err} }
-	}
-	appended, err := appendThread(thread, "## "+stamp()+"\n\n")
-	if err != nil {
-		return func() tea.Msg { return editorDoneMsg{err: err} }
-	}
+// runVim opens path in vim. Inside this session only, q in normal mode
+// saves and returns to wq.
+func runVim(path string, insert bool, done func(error) tea.Msg) tea.Cmd {
 	vim := os.Getenv("WQ_VIM")
 	if vim == "" {
 		vim = "vim"
 	}
-	cmd := exec.Command(vim, "-O", strategy, thread,
-		"-c", "nnoremap <silent> q :wqa<CR>",
-		"-c", "wincmd l",
-		"-c", "normal! G",
-	)
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return editorDoneMsg{id: n.ID, strategy: strategy, thread: thread, appended: appended, err: err}
+	args := []string{path, "-c", "nnoremap <silent> q :wqa<CR>"}
+	if insert {
+		args = append(args, "-c", "startinsert")
+	}
+	return tea.ExecProcess(exec.Command(vim, args...), done)
+}
+
+// editStrategy opens strategy.md; its title: header renames the node.
+func editStrategy(dir string, n board.Node) tea.Cmd {
+	path, err := strategyPath(dir, n)
+	if err != nil {
+		return func() tea.Msg { return editorDoneMsg{err: err} }
+	}
+	return runVim(path, false, func(err error) tea.Msg {
+		return editorDoneMsg{id: n.ID, strategy: path, err: err}
 	})
+}
+
+func editEntry(path string, isNew bool) tea.Cmd {
+	return runVim(path, isNew, func(err error) tea.Msg {
+		return editorDoneMsg{entry: path, isNew: isNew, err: err}
+	})
+}
+
+// newEntry creates an empty entry and opens it in insert mode; it is
+// removed again if nothing was written.
+func newEntry(dir string, n board.Node) tea.Cmd {
+	e, err := thread.Add(board.NodeDir(dir, n.ID), time.Now(), "")
+	if err != nil {
+		return func() tea.Msg { return editorDoneMsg{err: err} }
+	}
+	return editEntry(e.Path, true)
+}
+
+// dropIfBlank removes a new entry that was left empty.
+func dropIfBlank(path string) {
+	data, err := os.ReadFile(path)
+	if err == nil && strings.TrimSpace(string(data)) == "" {
+		os.Remove(path)
+	}
 }

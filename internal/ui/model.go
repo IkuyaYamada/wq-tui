@@ -14,6 +14,7 @@ import (
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
 	"github.com/IkuyaYamada/wq-tui/internal/ime"
+	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 type mode int
@@ -24,6 +25,7 @@ const (
 	modeMove
 	modeConnect
 	modeVisual
+	modeDetail
 )
 
 const maxUndo = 200
@@ -51,6 +53,13 @@ type Model struct {
 	visLine   bool
 
 	pendingD bool // first d of dd was pressed
+
+	// Detail screen state for the node opened with Enter.
+	detailID string
+	entries  []thread.Entry
+	entrySel int
+	strategy string
+	trashed  []string // entries deleted this visit, restorable with u
 	connFrom string
 
 	width, height int
@@ -170,12 +179,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.msg = "vim: " + msg.err.Error()
 		}
-		if msg.thread != "" {
-			if err := dropUnused(msg.thread, msg.appended); err != nil {
-				m.msg = "thread: " + err.Error()
-			}
+		if msg.isNew {
+			dropIfBlank(msg.entry)
 		}
-		m.pullTitle(msg.id, msg.strategy)
+		if msg.strategy != "" {
+			m.pullTitle(msg.id, msg.strategy)
+		}
+		if m.mode == modeDetail {
+			m.reloadDetail(msg.entry)
+		}
 		m.toASCII()
 	case tea.KeyMsg:
 		m.msg = ""
@@ -193,6 +205,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keyConnect(msg)
 		case modeVisual:
 			m.keyVisual(msg)
+		case modeDetail:
+			cmd = m.keyDetail(msg)
 		}
 	default:
 		if m.mode == modeInput {
@@ -294,7 +308,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		if n == nil {
 			return nil
 		}
-		return openEditor(m.dir, *n)
+		m.openDetail(n)
 	case "D":
 		m.deleteRow()
 	case "v", "V":
@@ -554,8 +568,9 @@ func (m *Model) keyConnect(k tea.KeyMsg) {
 	}
 }
 
-// toggleDone flips the done flag and leaves a line in the node's thread.
-func (m *Model) toggleDone() {
+// toggleDone flips the done flag and logs it as a thread entry, returning
+// that entry's path.
+func (m *Model) toggleDone() string {
 	m.checkpoint()
 	n := m.selected()
 	n.Done = !n.Done
@@ -567,12 +582,11 @@ func (m *Model) toggleDone() {
 		event = "Completed"
 	}
 	m.save()
-	if _, thread, err := nodeFiles(m.dir, *n); err == nil {
-		_, err = appendThread(thread, "- "+stamp()+" "+event+"\n")
-		if err != nil {
-			m.msg = "thread: " + err.Error()
-		}
+	e, err := thread.Add(board.NodeDir(m.dir, n.ID), time.Now(), event+"\n")
+	if err != nil {
+		m.msg = "thread: " + err.Error()
 	}
+	return e.Path
 }
 
 func (m *Model) bodyHeight() int { return max(m.height-2, 1) }
@@ -604,6 +618,7 @@ var help = map[mode]string{
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeVisual:  "hjkl extend · m move together · d delete · v block / V rows · esc cancel",
+	modeDetail:  "j/k select · a add · ⏎ edit · s strategy · x delete · u restore · ␣ done · esc board",
 }
 
 func (m Model) View() string {
@@ -625,8 +640,36 @@ func (m Model) View() string {
 			label = " VISUAL LINE "
 		}
 		header += "  " + modeStyle.Background(lipgloss.Color("141")).Render(label)
+	case modeDetail:
+		if n := m.detailNode(); n != nil {
+			title := n.Title
+			if n.Done {
+				title = "✓ " + title
+			}
+			header = headerStyle.Render("wq") + dimStyle.Render(" › ") + headerStyle.Render(title)
+		}
 	}
 
+	var body []string
+	if m.mode == modeDetail {
+		body = m.viewDetail(m.bodyHeight())
+	} else {
+		body = m.viewBoard()
+	}
+
+	var footer string
+	switch {
+	case m.mode == modeInput:
+		footer = m.input.View()
+	case m.msg != "":
+		footer = msgStyle.Render(m.msg)
+	default:
+		footer = dimStyle.Render(runewidth.Truncate(help[m.mode], max(m.width-1, 1), "…"))
+	}
+	return header + "\n" + strings.Join(body, "\n") + "\n" + footer
+}
+
+func (m Model) viewBoard() []string {
 	body := make([]string, m.bodyHeight())
 	l := newLayout(m.b, m.width)
 	m.refreshRoutes() // no-op unless View runs before the first Update
@@ -649,17 +692,7 @@ func (m Model) View() string {
 			body[i] = cv.line(y)
 		}
 	}
-
-	var footer string
-	switch {
-	case m.mode == modeInput:
-		footer = m.input.View()
-	case m.msg != "":
-		footer = msgStyle.Render(m.msg)
-	default:
-		footer = dimStyle.Render(runewidth.Truncate(help[m.mode], max(m.width-1, 1), "…"))
-	}
-	return header + "\n" + strings.Join(body, "\n") + "\n" + footer
+	return body
 }
 
 func setOf(ids []string) map[string]bool {
