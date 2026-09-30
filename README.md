@@ -32,7 +32,7 @@ Plain files, so the directory can be a git repo of its own.
 | `g` / `G` | Top / last row with nodes |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
 | `o` / `O` | Insert a node below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B) |
-| `i` | Rename |
+| `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge |
 | `Space` | Toggle done (logged to the thread) |
@@ -57,3 +57,18 @@ New nodes ask for a title right away; `Esc` on that prompt discards the node.
 vim-compatible binary). A timestamp heading is appended to the thread and the
 cursor starts under it; the heading is removed again if you write nothing.
 For this session only, `q` in normal mode saves both files and returns.
+
+`strategy.md` starts with a small header that carries the node's title:
+
+```markdown
+---
+title: 設計
+---
+
+(strategy)
+```
+
+Edit the `title:` line and the node is renamed when you leave vim (undoable
+with `u`; a blank title is ignored). `board.json` stays the source of truth:
+the header is rewritten with the current title every time the node opens.
+Other `key: value` lines you add to the header are kept.

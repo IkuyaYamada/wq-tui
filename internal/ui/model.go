@@ -141,6 +141,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.msg = "thread: " + err.Error()
 			}
 		}
+		m.pullTitle(msg.id, msg.strategy)
 	case tea.KeyMsg:
 		m.msg = ""
 		switch m.mode {
@@ -170,6 +171,19 @@ func (m *Model) refreshRoutes() {
 		m.routes = routeEdges(m.b, newLayout(m.b, m.width))
 		m.routeKey = key
 	}
+}
+
+// pullTitle adopts a title edited in strategy.md's header as one undoable
+// rename. An emptied title is ignored.
+func (m *Model) pullTitle(id, strategy string) {
+	title, ok := readStrategyTitle(strategy)
+	n := m.b.Node(id)
+	if !ok || n == nil || n.Title == title {
+		return
+	}
+	m.checkpoint()
+	m.b.Node(id).Title = title
+	m.save()
 }
 
 func dirOf(k string) (board.Dir, bool) {

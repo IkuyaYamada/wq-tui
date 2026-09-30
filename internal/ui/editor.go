@@ -13,6 +13,8 @@ import (
 )
 
 type editorDoneMsg struct {
+	id       string
+	strategy string
 	thread   string
 	appended string
 	err      error
@@ -26,7 +28,7 @@ func nodeFiles(dir string, n board.Node) (strategy, thread string, err error) {
 	strategy = filepath.Join(d, "strategy.md")
 	thread = filepath.Join(d, "thread.md")
 	if _, err := os.Stat(strategy); os.IsNotExist(err) {
-		if err := os.WriteFile(strategy, []byte("# "+n.Title+"\n\n"), 0o644); err != nil {
+		if err := syncStrategyTitle(strategy, n.Title); err != nil {
 			return "", "", err
 		}
 	}
@@ -81,9 +83,13 @@ func stamp() string { return time.Now().Format("2006-01-02 15:04") }
 
 // openEditor opens strategy (left) and thread (right) side by side in vim,
 // with the cursor under a fresh timestamp heading at the end of the thread.
-// Inside this session only, q in normal mode saves everything and returns.
+// The strategy header carries the node's title, so editing it renames the
+// node. Inside this session only, q in normal mode saves and returns.
 func openEditor(dir string, n board.Node) tea.Cmd {
 	strategy, thread, err := nodeFiles(dir, n)
+	if err == nil {
+		err = syncStrategyTitle(strategy, n.Title)
+	}
 	if err != nil {
 		return func() tea.Msg { return editorDoneMsg{err: err} }
 	}
@@ -101,6 +107,6 @@ func openEditor(dir string, n board.Node) tea.Cmd {
 		"-c", "normal! G",
 	)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return editorDoneMsg{thread: thread, appended: appended, err: err}
+		return editorDoneMsg{id: n.ID, strategy: strategy, thread: thread, appended: appended, err: err}
 	})
 }
