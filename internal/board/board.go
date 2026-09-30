@@ -56,7 +56,6 @@ func (d Dir) delta() (dr, dc int) {
 var (
 	ErrNotFound = errors.New("node not found")
 	ErrSelf     = errors.New("cannot connect a node to itself")
-	ErrUpward   = errors.New("edges must point downward")
 )
 
 func (b *Board) Clone() *Board {
@@ -240,15 +239,17 @@ func (b *Board) Delete(id string) error {
 	return nil
 }
 
-// ToggleEdge removes from → to if it exists and creates it otherwise.
-// Connecting two nodes on the same row first pushes the target and every
-// lower row down by one. Since edges always point down, cycles are impossible.
+// ToggleEdge removes the edge between from and to if one exists, in either
+// direction, and creates it otherwise. Edges always point down, so picking a
+// node above connects it to from rather than the other way round. Connecting
+// two nodes on the same row first pushes the target and every lower row down
+// by one. Since edges always point down, cycles are impossible.
 func (b *Board) ToggleEdge(from, to string) (added bool, err error) {
 	if from == to {
 		return false, ErrSelf
 	}
 	for i, e := range b.Edges {
-		if e.From == from && e.To == to {
+		if (e.From == from && e.To == to) || (e.From == to && e.To == from) {
 			b.Edges = append(b.Edges[:i], b.Edges[i+1:]...)
 			return false, nil
 		}
@@ -258,7 +259,8 @@ func (b *Board) ToggleEdge(from, to string) (added bool, err error) {
 		return false, ErrNotFound
 	}
 	if t.Row < f.Row {
-		return false, ErrUpward
+		b.Edges = append(b.Edges, Edge{From: to, To: from})
+		return true, nil
 	}
 	if t.Row == f.Row {
 		row := f.Row

@@ -67,9 +67,20 @@ func TestDeleteBridgesSimpleChain(t *testing.T) {
 
 func TestToggleEdge(t *testing.T) {
 	b := &Board{Nodes: []Node{node("A", 1, 0), node("B", 0, 0), node("C", 1, 2), node("D", 2, 0)}}
-	if _, err := b.ToggleEdge("A", "B"); err != ErrUpward {
-		t.Errorf("upward edge: err = %v", err)
+
+	// Picking a node above connects it downward to the source...
+	if added, err := b.ToggleEdge("A", "B"); err != nil || !added || !b.HasEdge("B", "A") {
+		t.Fatalf("upward pick: added=%v err=%v edges=%v", added, err, b.Edges)
 	}
+	// ...and picking it again from either end disconnects.
+	if added, err := b.ToggleEdge("A", "B"); err != nil || added || len(b.Edges) != 0 {
+		t.Errorf("disconnect from below: added=%v err=%v edges=%v", added, err, b.Edges)
+	}
+	b.ToggleEdge("B", "A")
+	if added, _ := b.ToggleEdge("A", "B"); added || len(b.Edges) != 0 {
+		t.Errorf("disconnect of B→A picked from A: edges=%v", b.Edges)
+	}
+
 	added, err := b.ToggleEdge("A", "C")
 	if err != nil || !added {
 		t.Fatalf("same-row connect: added=%v err=%v", added, err)
