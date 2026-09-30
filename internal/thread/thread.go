@@ -37,7 +37,7 @@ func trashDir(nodeDir string) string { return filepath.Join(Dir(nodeDir), ".tras
 
 // List returns the entries oldest first.
 func List(nodeDir string) ([]Entry, error) {
-	if err := migrate(nodeDir); err != nil {
+	if err := Migrate(nodeDir); err != nil {
 		return nil, err
 	}
 	files, err := os.ReadDir(Dir(nodeDir))
@@ -102,6 +102,22 @@ func Add(nodeDir string, now time.Time, body string) (Entry, error) {
 	}
 }
 
+// DropBlank removes entries that were saved with nothing in them.
+func DropBlank(nodeDir string) error {
+	entries, err := List(nodeDir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if strings.TrimSpace(e.Body) == "" {
+			if err := os.Remove(e.Path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // Trash moves an entry aside so it can be restored; it returns the trashed
 // path.
 func Trash(nodeDir string, e Entry) (string, error) {
@@ -117,11 +133,11 @@ func Restore(nodeDir, trashed string) error {
 	return os.Rename(trashed, filepath.Join(Dir(nodeDir), filepath.Base(trashed)))
 }
 
-// migrate splits a legacy single-file thread.md into entries: each
+// Migrate splits a legacy single-file thread.md into entries: each
 // "## YYYY-MM-DD HH:MM" heading starts one, and each "- YYYY-MM-DD HH:MM
 // Completed" style log line becomes its own. The old file is kept as
 // thread.md.migrated.
-func migrate(nodeDir string) error {
+func Migrate(nodeDir string) error {
 	legacy := filepath.Join(nodeDir, "thread.md")
 	data, err := os.ReadFile(legacy)
 	if errors.Is(err, fs.ErrNotExist) {

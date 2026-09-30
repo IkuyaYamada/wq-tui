@@ -25,7 +25,6 @@ const (
 	modeMove
 	modeConnect
 	modeVisual
-	modeDetail
 )
 
 const maxUndo = 200
@@ -53,17 +52,7 @@ type Model struct {
 	visLine   bool
 
 	pendingD bool // first d of dd was pressed
-
-	// Detail screen state for the node opened with Enter.
-	detailID string
-	entries  []thread.Entry
-	entrySel int
-	strategy string
-	trashed  []string // entries deleted this visit, restorable with u
-
-	focusStrategy  bool // Tab / h / l switch between the strategy and thread panes
-	strategyScroll int
-	connFrom       string
+	connFrom string
 
 	width, height int
 	scroll        int
@@ -182,14 +171,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.msg = "vim: " + msg.err.Error()
 		}
-		if msg.isNew {
-			dropIfBlank(msg.entry)
-		}
 		if msg.strategy != "" {
 			m.pullTitle(msg.id, msg.strategy)
-		}
-		if m.mode == modeDetail {
-			m.reloadDetail(msg.entry)
 		}
 		m.toASCII()
 	case tea.KeyMsg:
@@ -208,8 +191,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keyConnect(msg)
 		case modeVisual:
 			m.keyVisual(msg)
-		case modeDetail:
-			cmd = m.keyDetail(msg)
 		}
 	default:
 		if m.mode == modeInput {
@@ -311,7 +292,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		if n == nil {
 			return nil
 		}
-		m.openDetail(n)
+		return openNode(m.dir, *n)
 	case "D":
 		m.deleteRow()
 	case "v", "V":
@@ -571,9 +552,8 @@ func (m *Model) keyConnect(k tea.KeyMsg) {
 	}
 }
 
-// toggleDone flips the done flag and logs it as a thread entry, returning
-// that entry's path.
-func (m *Model) toggleDone() string {
+// toggleDone flips the done flag and logs it as a thread entry.
+func (m *Model) toggleDone() {
 	m.checkpoint()
 	n := m.selected()
 	n.Done = !n.Done
@@ -585,11 +565,9 @@ func (m *Model) toggleDone() string {
 		event = "Completed"
 	}
 	m.save()
-	e, err := thread.Add(board.NodeDir(m.dir, n.ID), time.Now(), event+"\n")
-	if err != nil {
+	if _, err := thread.Add(board.NodeDir(m.dir, n.ID), time.Now(), event+"\n"); err != nil {
 		m.msg = "thread: " + err.Error()
 	}
-	return e.Path
 }
 
 func (m *Model) bodyHeight() int { return max(m.height-2, 1) }
@@ -621,7 +599,6 @@ var help = map[mode]string{
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeVisual:  "hjkl extend · m move together · d delete · v block / V rows · esc cancel",
-	modeDetail:  "tab switch pane · j/k select/scroll · ⏎ edit · a add entry · s strategy · x delete · u restore · ␣ done · esc board",
 }
 
 func (m Model) View() string {
@@ -643,22 +620,9 @@ func (m Model) View() string {
 			label = " VISUAL LINE "
 		}
 		header += "  " + modeStyle.Background(lipgloss.Color("141")).Render(label)
-	case modeDetail:
-		if n := m.detailNode(); n != nil {
-			title := n.Title
-			if n.Done {
-				title = "✓ " + title
-			}
-			header = headerStyle.Render("wq") + dimStyle.Render(" › ") + headerStyle.Render(title)
-		}
 	}
 
-	var body []string
-	if m.mode == modeDetail {
-		body = m.viewDetail(m.bodyHeight())
-	} else {
-		body = m.viewBoard()
-	}
+	body := m.viewBoard()
 
 	var footer string
 	switch {

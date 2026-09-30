@@ -1,11 +1,11 @@
 package ui
 
 import (
+	_ "embed"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -13,13 +13,13 @@ import (
 	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
-// editorDoneMsg reports a finished vim session on a node's strategy and,
-// optionally, one of its thread entries.
+//go:embed wq.vim
+var nodeVimScript []byte
+
+// editorDoneMsg reports that the vim session on a node has ended.
 type editorDoneMsg struct {
-	id       string // node whose strategy was open
+	id       string
 	strategy string
-	entry    string // thread entry that was open beside it, if any
-	isNew    bool   // the entry was created for this session
 	err      error
 }
 
@@ -34,60 +34,55 @@ func strategyPath(dir string, n board.Node) (string, error) {
 	return path, syncStrategyTitle(path, n.Title)
 }
 
-// strategyBody is strategy.md without its header, for display.
-func strategyBody(dir string, n board.Node) string {
-	data, err := os.ReadFile(filepath.Join(board.NodeDir(dir, n.ID), "strategy.md"))
+// vimScriptPath writes the embedded layout script where vim can source it.
+func vimScriptPath() (string, error) {
+	cache, err := os.UserCacheDir()
 	if err != nil {
-		return ""
+		cache = os.TempDir()
 	}
-	_, body, _ := splitFrontmatter(string(data))
-	return strings.Trim(body, "\n")
+	dir := filepath.Join(cache, "wq-tui")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "wq.vim")
+	return path, os.WriteFile(path, nodeVimScript, 0o644)
 }
 
-// openSplit opens the node in vim the way the detail screen shows it:
-// strategy on the left and, when given, a thread entry on the right. The
-// cursor starts in the entry when focusEntry is set (in insert mode for a
-// new one), otherwise in the strategy; C-w w moves between them. Inside this
-// session only, q in normal mode saves both and returns to wq.
-func openSplit(dir string, n board.Node, entry string, isNew, focusEntry bool) tea.Cmd {
+// vimString quotes s as a single-quoted Vim string.
+func vimString(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+
+// openNode opens the node in vim: strategy on the left, the thread index
+// top right and the picked entry below it (see wq.vim).
+func openNode(dir string, n board.Node) tea.Cmd {
+	fail := func(err error) tea.Cmd { return func() tea.Msg { return editorDoneMsg{err: err} } }
 	strategy, err := strategyPath(dir, n)
 	if err != nil {
-		return func() tea.Msg { return editorDoneMsg{err: err} }
+		return fail(err)
+	}
+	nodeDir := board.NodeDir(dir, n.ID)
+	if err := thread.Migrate(nodeDir); err != nil {
+		return fail(err)
+	}
+	if err := os.MkdirAll(thread.Dir(nodeDir), 0o755); err != nil {
+		return fail(err)
+	}
+	script, err := vimScriptPath()
+	if err != nil {
+		return fail(err)
 	}
 	vim := os.Getenv("WQ_VIM")
 	if vim == "" {
 		vim = "vim"
 	}
-	args := []string{strategy}
-	if entry != "" {
-		args = []string{"-O", strategy, entry}
-	}
-	args = append(args, "-c", "nnoremap <silent> q :wqa<CR>")
-	if entry != "" && focusEntry {
-		args = append(args, "-c", "wincmd l")
-		if isNew {
-			args = append(args, "-c", "startinsert")
+	cmd := exec.Command(vim,
+		"--cmd", "let g:wq_thread_dir = "+vimString(thread.Dir(nodeDir)),
+		"-S", script,
+		strategy,
+	)
+	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+		if derr := thread.DropBlank(nodeDir); err == nil {
+			err = derr
 		}
-	}
-	return tea.ExecProcess(exec.Command(vim, args...), func(err error) tea.Msg {
-		return editorDoneMsg{id: n.ID, strategy: strategy, entry: entry, isNew: isNew, err: err}
+		return editorDoneMsg{id: n.ID, strategy: strategy, err: err}
 	})
-}
-
-// newEntry creates an empty entry and opens it beside the strategy in
-// insert mode; it is removed again if nothing was written.
-func newEntry(dir string, n board.Node) tea.Cmd {
-	e, err := thread.Add(board.NodeDir(dir, n.ID), time.Now(), "")
-	if err != nil {
-		return func() tea.Msg { return editorDoneMsg{err: err} }
-	}
-	return openSplit(dir, n, e.Path, true, true)
-}
-
-// dropIfBlank removes a new entry that was left empty.
-func dropIfBlank(path string) {
-	data, err := os.ReadFile(path)
-	if err == nil && strings.TrimSpace(string(data)) == "" {
-		os.Remove(path)
-	}
 }

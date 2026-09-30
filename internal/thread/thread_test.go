@@ -59,3 +59,17 @@ func TestMigrateLegacyThread(t *testing.T) {
 		t.Errorf("legacy file not kept: %v", err)
 	}
 }
+
+func TestDropBlank(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.Local)
+	Add(dir, now, "  \n\n")
+	Add(dir, now.Add(time.Minute), "keep\n")
+	if err := DropBlank(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := List(dir)
+	if len(got) != 1 || got[0].Summary() != "keep" {
+		t.Errorf("got %+v", got)
+	}
+}

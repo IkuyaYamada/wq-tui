@@ -37,7 +37,7 @@ Plain files, so the directory can be a git repo of its own.
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
 | `Space` | Toggle done (logged to the thread) |
-| `Enter` | Open the node's detail screen |
+| `Enter` | Open the node in vim (strategy, thread index, entry) |
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
 | `u` / `Ctrl+r` | Undo / redo |
@@ -53,27 +53,30 @@ New nodes ask for a title right away; `Esc` on that prompt discards the node.
 - Edges always point to a lower row. Connecting two nodes on the same row
   pushes the target down a row; upward edges are refused.
 
-## Node detail screen
+## Opening a node
 
-`Enter` on a node shows its strategy on the left and its thread on the right:
-the entries, oldest first, with the selected one's full text below.
+`Enter` on a node opens it straight in vim, laid out as
+
+```
+ strategy.md            │ ▸ 10/01 15:20  ログ見たら500多発   ← thread index
+                        │   10/01 14:03  クエリ流した
+                        │   10/01 16:43  Completed
+                        ├──────────────────────────────────
+                        │ (the entry picked in the index)
+```
+
+`C-w w` cycles through the three windows. In the index:
 
 | Key | Action |
 | --- | --- |
-| `Tab` / `h` / `l` | Switch focus between the strategy and thread panes (the focused one is marked ▸) |
-| `j` / `k`, `g` / `G` | Select an entry, or scroll the strategy when it has focus |
-| `a` / `o` | New entry, opened beside the strategy in insert mode (left empty, it is discarded) |
-| `Enter` / `e` / `i` | Open vim split like the screen: strategy left, selected entry right, cursor on the focused side |
-| `s` | Same split, cursor on the strategy |
-| `x` / `d` | Delete the entry (moved to `thread/.trash/`) |
-| `u` | Restore the last entry deleted on this visit |
-| `Space` | Toggle done (logged as a `Completed` / `Reopened` entry) |
-| `Esc` / `q` | Back to the board |
+| `Enter` / `o` | Open the entry under the cursor below |
+| `a` | New entry below, in insert mode (never written if left untouched) |
+| `D` | Delete the entry (after a prompt; moved to `thread/.trash/`) |
 
-vim mirrors the screen: `vim -O strategy.md <entry>.md` (just the strategy
-while the thread is empty), so `C-w w` moves between the two. `WQ_VIM`
-overrides the binary. For that session only, `q` in normal mode saves both
-and returns.
+`q` in normal mode saves everything and returns to the board; entries saved
+empty are removed. The layout comes from `internal/ui/wq.vim`, embedded in the
+binary and sourced with `vim -S`, so it only applies to these sessions.
+`WQ_VIM` overrides the vim binary.
 
 `strategy.md` starts with a small header that carries the node's title:
 
@@ -86,9 +89,9 @@ title: 設計
 ```
 
 Edit the `title:` line and the node is renamed when you leave vim (undoable
-with `u` on the board; a blank title is ignored). `board.json` stays the
+with `u`; a blank title is ignored). `board.json` stays the
 source of truth: the header is rewritten with the current title every time
-the strategy opens. Other `key: value` lines you add to the header are kept.
+the node opens. Other `key: value` lines you add to the header are kept.
 
 An older single-file `thread.md` is split into entries (one per `## time`
 heading or `- time Completed` line) the first time the node is opened, and
