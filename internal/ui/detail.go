@@ -74,7 +74,7 @@ func (m *Model) keyDetail(k tea.KeyMsg) tea.Cmd {
 			m.strategyScroll = 0
 			return nil
 		case "enter", "e", "i":
-			return editStrategy(m.dir, *n)
+			return openSplit(m.dir, *n, m.selectedEntry(), false, false)
 		}
 	}
 	switch key {
@@ -92,9 +92,9 @@ func (m *Model) keyDetail(k tea.KeyMsg) tea.Cmd {
 		if len(m.entries) == 0 {
 			return newEntry(m.dir, *n)
 		}
-		return editEntry(m.entries[m.entrySel].Path, false)
+		return openSplit(m.dir, *n, m.selectedEntry(), false, true)
 	case "s":
-		return editStrategy(m.dir, *n)
+		return openSplit(m.dir, *n, m.selectedEntry(), false, false)
 	case "x", "d":
 		if len(m.entries) == 0 {
 			return nil
@@ -127,6 +127,13 @@ func (m *Model) keyDetail(k tea.KeyMsg) tea.Cmd {
 		m.cursorTo(n)
 	}
 	return nil
+}
+
+func (m *Model) selectedEntry() string {
+	if len(m.entries) == 0 {
+		return ""
+	}
+	return m.entries[m.entrySel].Path
 }
 
 func (m *Model) paneWidths() (left, right int) {

@@ -62,16 +62,18 @@ the entries, oldest first, with the selected one's full text below.
 | --- | --- |
 | `Tab` / `h` / `l` | Switch focus between the strategy and thread panes (the focused one is marked ▸) |
 | `j` / `k`, `g` / `G` | Select an entry, or scroll the strategy when it has focus |
-| `a` / `o` | New entry (vim opens in insert mode; left empty, it is discarded) |
-| `Enter` / `e` / `i` | Edit the selected entry (or the strategy, when focused) in vim |
-| `s` | Edit the strategy in vim |
+| `a` / `o` | New entry, opened beside the strategy in insert mode (left empty, it is discarded) |
+| `Enter` / `e` / `i` | Open vim split like the screen: strategy left, selected entry right, cursor on the focused side |
+| `s` | Same split, cursor on the strategy |
 | `x` / `d` | Delete the entry (moved to `thread/.trash/`) |
 | `u` | Restore the last entry deleted on this visit |
 | `Space` | Toggle done (logged as a `Completed` / `Reopened` entry) |
 | `Esc` / `q` | Back to the board |
 
-vim is started with `WQ_VIM` if set. For that session only, `q` in normal
-mode saves and returns.
+vim mirrors the screen: `vim -O strategy.md <entry>.md` (just the strategy
+while the thread is empty), so `C-w w` moves between the two. `WQ_VIM`
+overrides the binary. For that session only, `q` in normal mode saves both
+and returns.
 
 `strategy.md` starts with a small header that carries the node's title:
 
