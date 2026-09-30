@@ -13,6 +13,7 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
+	"github.com/IkuyaYamada/wq-tui/internal/ime"
 )
 
 type mode int
@@ -56,13 +57,37 @@ type Model struct {
 
 	routes   []route
 	routeKey string
+
+	// ime switches to ASCII on the board and back to imePrev (the input
+	// method in use before, e.g. Japanese) while a title is being typed.
+	ime     ime.Switcher
+	imePrev string
 }
 
-func New(dir string, b *board.Board) Model {
+// Option configures a Model.
+type Option func(*Model)
+
+// WithIME lets the model switch the keyboard input source.
+func WithIME(s ime.Switcher) Option { return func(m *Model) { m.ime = s } }
+
+func New(dir string, b *board.Board, opts ...Option) Model {
 	ti := textinput.New()
 	ti.Prompt = "title> "
 	ti.CharLimit = 200
-	return Model{dir: dir, b: b, input: ti, width: 120, height: 40}
+	m := Model{dir: dir, b: b, input: ti, width: 120, height: 40, ime: ime.Noop{}}
+	for _, o := range opts {
+		o(&m)
+	}
+	m.toASCII()
+	return m
+}
+
+// toASCII puts the keyboard in ASCII for board keys, remembering what was
+// active so title input can bring it back.
+func (m *Model) toASCII() {
+	if prev := m.ime.ASCII(); prev != "" {
+		m.imePrev = prev
+	}
 }
 
 func (m Model) Init() tea.Cmd { return nil }
@@ -149,8 +174,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.pullTitle(msg.id, msg.strategy)
+		m.toASCII()
 	case tea.KeyMsg:
 		m.msg = ""
+		if m.mode != modeInput {
+			msg = halfwidth(msg)
+		}
 		switch m.mode {
 		case modeNormal:
 			cmd = m.keyNormal(msg)
@@ -313,6 +342,7 @@ func (m *Model) startNew(key string) tea.Cmd {
 }
 
 func (m *Model) startInput(value string) tea.Cmd {
+	m.ime.Select(m.imePrev)
 	m.mode = modeInput
 	m.input.SetValue(value)
 	m.input.CursorEnd()
@@ -325,6 +355,7 @@ func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
 		title := strings.TrimSpace(m.input.Value())
 		m.input.Blur()
 		m.mode = modeNormal
+		m.toASCII()
 		if title == "" {
 			if m.inputNew {
 				m.discardNew()
@@ -344,6 +375,7 @@ func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
 	case "esc", "ctrl+c":
 		m.input.Blur()
 		m.mode = modeNormal
+		m.toASCII()
 		if m.inputNew {
 			m.discardNew()
 		}
@@ -606,4 +638,27 @@ func setOf(ids []string) map[string]bool {
 		out[id] = true
 	}
 	return out
+}
+
+// halfwidth maps full-width ASCII (ｈｊｋｌ, typed with a Japanese input
+// method in full-width mode) to plain ASCII so board keys still work.
+func halfwidth(k tea.KeyMsg) tea.KeyMsg {
+	if k.Type != tea.KeyRunes {
+		return k
+	}
+	runes := make([]rune, len(k.Runes))
+	for i, r := range k.Runes {
+		switch {
+		case r >= 0xFF01 && r <= 0xFF5E:
+			r -= 0xFEE0
+		case r == 0x3000:
+			r = ' '
+		}
+		runes[i] = r
+	}
+	if len(runes) == 1 && runes[0] == ' ' {
+		return tea.KeyMsg{Type: tea.KeySpace, Runes: runes}
+	}
+	k.Runes = runes
+	return k
 }

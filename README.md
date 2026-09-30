@@ -10,7 +10,7 @@ Successor to the web-based `workflow-queue`, keeping its grid rules and keymap.
 
 ```sh
 mise install        # Go toolchain (see mise.toml)
-go build -o wq . && ./wq
+go build -o wq . && ./wq   # mise.toml sets CGO_ENABLED=0
 ```
 
 Data lives in `~/wq` (override with `WQ_DIR`):
@@ -73,3 +73,15 @@ Edit the `title:` line and the node is renamed when you leave vim (undoable
 with `u`; a blank title is ignored). `board.json` stays the source of truth:
 the header is rewritten with the current title every time the node opens.
 Other `key: value` lines you add to the header are kept.
+
+## Input method (macOS)
+
+Board keys need ASCII, so wq switches the keyboard to the ASCII input source
+(e.g. ABC) whenever you are on the board, including after returning from vim.
+While typing a title it switches back to the input method you were using
+(e.g. Japanese). Full-width keys such as `ｈｊｋｌ` are also understood on the
+board. Set `WQ_IME=off` to leave the input source alone.
+
+The switch goes through the Carbon Text Input Sources API, loaded at runtime
+with purego, so no cgo is needed. `WQ_IME_LIVE=1 go test ./internal/ime`
+checks it against the real input source (and restores it).

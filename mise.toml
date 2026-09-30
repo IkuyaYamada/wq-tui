@@ -1,2 +1,7 @@
 [tools]
 go = "latest"
+
+[env]
+# The Command Line Tools linker cannot read the macOS 27 SDK stubs, and
+# nothing here needs cgo: the input-source switch loads Carbon via purego.
+CGO_ENABLED = "0"

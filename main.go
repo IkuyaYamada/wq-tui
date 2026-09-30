@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
+	"github.com/IkuyaYamada/wq-tui/internal/ime"
 	"github.com/IkuyaYamada/wq-tui/internal/ui"
 )
+
+// Keep the main goroutine, which runs Bubble Tea's update loop, on the main
+// OS thread: macOS only allows input-source switching from there.
+func init() { runtime.LockOSThread() }
 
 func main() {
 	dir := os.Getenv("WQ_DIR")
@@ -25,7 +31,11 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	if _, err := tea.NewProgram(ui.New(dir, b), tea.WithAltScreen()).Run(); err != nil {
+	var opts []ui.Option
+	if os.Getenv("WQ_IME") != "off" {
+		opts = append(opts, ui.WithIME(ime.System{}))
+	}
+	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen()).Run(); err != nil {
 		fail(err)
 	}
 }

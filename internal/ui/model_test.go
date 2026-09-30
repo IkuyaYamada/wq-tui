@@ -219,3 +219,58 @@ func TestDisconnectFromLowerNode(t *testing.T) {
 		t.Errorf("reconnect: %v", m.b.Edges)
 	}
 }
+
+type fakeIME struct {
+	current string
+	log     []string
+}
+
+func (f *fakeIME) ASCII() string {
+	f.log = append(f.log, "ascii")
+	if f.current == "ABC" {
+		return ""
+	}
+	prev := f.current
+	f.current = "ABC"
+	return prev
+}
+
+func (f *fakeIME) Select(id string) {
+	f.log = append(f.log, "select "+id)
+	if id != "" {
+		f.current = id
+	}
+}
+
+func TestIMESwitchesAroundTitleInput(t *testing.T) {
+	f := &fakeIME{current: "Japanese"}
+	m := New(t.TempDir(), &board.Board{}, WithIME(f))
+	if f.current != "ABC" {
+		t.Fatalf("board should start in ASCII, got %s", f.current)
+	}
+	m = press(t, m, "a")
+	if f.current != "Japanese" {
+		t.Errorf("title input should restore Japanese, got %s", f.current)
+	}
+	m = press(t, m, "設計", "<enter>")
+	if f.current != "ABC" {
+		t.Errorf("back on the board should be ASCII, got %s", f.current)
+	}
+	next, _ := m.Update(editorDoneMsg{})
+	m = next.(Model)
+	if f.current != "ABC" {
+		t.Errorf("after vim should be ASCII, got %s", f.current)
+	}
+}
+
+func TestFullWidthKeysWorkOnBoard(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "ａ", "全角", "<enter>", "ｏ", "ｊｋ", "<enter>")
+	if got := titles(m.b); got["全角"] != [2]int{0, 0} || got["ｊｋ"] != [2]int{1, 0} {
+		t.Errorf("full-width a/o not recognised, or title was converted: %v", got)
+	}
+	m = press(t, m, "ｋ", "　")
+	if n := m.selected(); n == nil || n.Title != "全角" || !n.Done {
+		t.Errorf("full-width k / ideographic space not recognised: %+v", n)
+	}
+}
