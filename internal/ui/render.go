@@ -23,10 +23,15 @@ const (
 	// bufferRows empty rows always follow the lowest node, so there is
 	// somewhere to move the cursor and drop a new node.
 	bufferRows = 3
+
+	// laneH is the fixed gap between rows that edges run through. It never
+	// depends on the edges themselves, so moving or connecting a node does
+	// not shift every row below it.
+	laneH = 3
 )
 
-// layout maps grid cells to canvas coordinates. Rows are separated by lanes
-// whose height grows with the number of edges that must pass through them.
+// layout maps grid cells to canvas coordinates. Rows are separated by
+// fixed-height lanes for edges.
 type layout struct {
 	cardW  int
 	rowY   []int
@@ -39,24 +44,10 @@ func newLayout(b *board.Board, termW int) layout {
 	l.cardW = max(l.cardW, 8)
 	l.width = 2*margin + board.Cols*l.cardW + (board.Cols-1)*gap
 	rows := b.MaxRow() + 1 + bufferRows
-	// An edge that changes column needs a horizontal run, either in the
-	// lane right below its source or the lane right above its target.
-	turning := make([]int, rows)
-	idx := index(b)
-	for _, e := range b.Edges {
-		f, t := idx[e.From], idx[e.To]
-		if f == nil || t == nil || f.Col == t.Col {
-			continue
-		}
-		turning[f.Row]++
-		if t.Row-1 != f.Row {
-			turning[t.Row-1]++
-		}
-	}
 	y := 0
 	for r := 0; r < rows; r++ {
 		l.rowY = append(l.rowY, y)
-		y += cardH + 1 + min(turning[r], 2)
+		y += cardH + laneH
 	}
 	l.height = y
 	return l

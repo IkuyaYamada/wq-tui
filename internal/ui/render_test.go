@@ -54,3 +54,15 @@ func TestRenderRoutesEveryEdge(t *testing.T) {
 		t.Errorf("expected arrowheads on every target, got %d", got)
 	}
 }
+
+func TestRowsStayPutWhenEdgesChange(t *testing.T) {
+	b := sample()
+	before := newLayout(b, 120).rowY
+	b.Edges = nil
+	after := newLayout(b, 120).rowY
+	for r := range before {
+		if before[r] != after[r] {
+			t.Fatalf("row %d moved from y=%d to y=%d", r, before[r], after[r])
+		}
+	}
+}
