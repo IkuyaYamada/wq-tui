@@ -27,7 +27,7 @@ const (
 	// laneH is the fixed gap between rows that edges run through. It never
 	// depends on the edges themselves, so moving or connecting a node does
 	// not shift every row below it.
-	laneH = 3
+	laneH = 2
 )
 
 // layout maps grid cells to canvas coordinates. Rows are separated by
