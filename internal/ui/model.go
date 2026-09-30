@@ -60,7 +60,10 @@ type Model struct {
 	entrySel int
 	strategy string
 	trashed  []string // entries deleted this visit, restorable with u
-	connFrom string
+
+	focusStrategy  bool // Tab / h / l switch between the strategy and thread panes
+	strategyScroll int
+	connFrom       string
 
 	width, height int
 	scroll        int
@@ -618,7 +621,7 @@ var help = map[mode]string{
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeVisual:  "hjkl extend · m move together · d delete · v block / V rows · esc cancel",
-	modeDetail:  "j/k select · a add · ⏎ edit · s strategy · x delete · u restore · ␣ done · esc board",
+	modeDetail:  "tab switch pane · j/k select/scroll · ⏎ edit · a add entry · s strategy · x delete · u restore · ␣ done · esc board",
 }
 
 func (m Model) View() string {

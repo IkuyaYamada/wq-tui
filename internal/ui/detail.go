@@ -22,6 +22,8 @@ func (m *Model) nodeDir() string { return board.NodeDir(m.dir, m.detailID) }
 func (m *Model) openDetail(n *board.Node) {
 	m.detailID = n.ID
 	m.mode = modeDetail
+	m.focusStrategy = false
+	m.strategyScroll = 0
 	m.trashed = nil
 	m.reloadDetail()
 	m.entrySel = len(m.entries) - 1
@@ -53,7 +55,29 @@ func (m *Model) reloadDetail(selectPath ...string) {
 
 func (m *Model) keyDetail(k tea.KeyMsg) tea.Cmd {
 	n := m.detailNode()
-	switch k.String() {
+	key := k.String()
+	switch key {
+	case "tab", "shift+tab", "h", "l", "left", "right":
+		m.focusStrategy = key == "h" || key == "left" ||
+			(key != "l" && key != "right" && !m.focusStrategy)
+		return nil
+	}
+	if m.focusStrategy {
+		switch key {
+		case "j", "down":
+			m.strategyScroll = min(m.strategyScroll+1, max(len(m.strategyLines())-1, 0))
+			return nil
+		case "k", "up":
+			m.strategyScroll = max(m.strategyScroll-1, 0)
+			return nil
+		case "g":
+			m.strategyScroll = 0
+			return nil
+		case "enter", "e", "i":
+			return editStrategy(m.dir, *n)
+		}
+	}
+	switch key {
 	case "j", "down":
 		m.entrySel = min(m.entrySel+1, len(m.entries)-1)
 	case "k", "up":
@@ -105,7 +129,28 @@ func (m *Model) keyDetail(k tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
+func (m *Model) paneWidths() (left, right int) {
+	left = max(m.width*2/5, 20)
+	return left, max(m.width-left-3, 20)
+}
+
+// strategyLines is the strategy wrapped to the left pane; scrolling stops
+// once its last line reaches the top.
+func (m *Model) strategyLines() []string {
+	w, _ := m.paneWidths()
+	return wrap(m.strategy, w)
+}
+
+// paneTitle marks the focused pane with ▸ and the accent colour.
+func paneTitle(name string, focused bool) (string, lipgloss.Style, bool) {
+	if focused {
+		return "▸ " + name, paneFocusStyle, true
+	}
+	return "  " + name, paneTitleStyle, true
+}
+
 var (
+	paneFocusStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 	paneTitleStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true)
 	entrySelStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 	entryTimeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
@@ -152,20 +197,20 @@ func (p *pane) add(text string, st lipgloss.Style, styled bool) {
 }
 
 func (m Model) viewDetail(h int) []string {
-	leftW := max(m.width*2/5, 20)
-	rightW := max(m.width-leftW-3, 20)
+	leftW, rightW := m.paneWidths()
 
 	var left pane
-	left.add(runewidth.Truncate("strategy", leftW, "…"), paneTitleStyle, true)
+	left.add(paneTitle("strategy", m.focusStrategy))
 	if m.strategy == "" {
-		left.add("s で strategy を書く", dimStyle, true)
+		left.add("⏎ か s で strategy を書く", dimStyle, true)
 	}
-	for _, l := range wrap(m.strategy, leftW) {
+	lines := m.strategyLines()
+	for _, l := range lines[min(m.strategyScroll, len(lines)):] {
 		left.add(l, lipgloss.Style{}, false)
 	}
 
 	var right pane
-	right.add("thread", paneTitleStyle, true)
+	right.add(paneTitle("thread", !m.focusStrategy))
 	if len(m.entries) == 0 {
 		right.add("a でエントリを追加", dimStyle, true)
 	}

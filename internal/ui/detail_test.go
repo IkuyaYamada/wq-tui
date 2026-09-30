@@ -79,3 +79,32 @@ func TestWrapBreaksJapanese(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestTabSwitchesDetailPanes(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "設計", "<enter>", "<enter>")
+	if m.focusStrategy {
+		t.Fatal("detail should open on the thread pane")
+	}
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyTab})
+	if !m.focusStrategy || !strings.Contains(m.View(), "▸ strategy") {
+		t.Errorf("tab should focus strategy")
+	}
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyTab})
+	if m.focusStrategy {
+		t.Errorf("second tab should go back to thread")
+	}
+	m = press(t, m, "h")
+	if !m.focusStrategy {
+		t.Errorf("h should focus strategy")
+	}
+	m = press(t, m, "l")
+	if m.focusStrategy {
+		t.Errorf("l should focus thread")
+	}
+}
+
+func pressKey(m Model, k tea.KeyMsg) Model {
+	n, _ := m.Update(k)
+	return n.(Model)
+}

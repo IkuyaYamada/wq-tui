@@ -60,9 +60,10 @@ the entries, oldest first, with the selected one's full text below.
 
 | Key | Action |
 | --- | --- |
-| `j` / `k`, `g` / `G` | Select an entry |
+| `Tab` / `h` / `l` | Switch focus between the strategy and thread panes (the focused one is marked ▸) |
+| `j` / `k`, `g` / `G` | Select an entry, or scroll the strategy when it has focus |
 | `a` / `o` | New entry (vim opens in insert mode; left empty, it is discarded) |
-| `Enter` / `e` / `i` | Edit the selected entry in vim |
+| `Enter` / `e` / `i` | Edit the selected entry (or the strategy, when focused) in vim |
 | `s` | Edit the strategy in vim |
 | `x` / `d` | Delete the entry (moved to `thread/.trash/`) |
 | `u` | Restore the last entry deleted on this visit |
