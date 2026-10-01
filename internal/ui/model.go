@@ -543,6 +543,20 @@ func (m *Model) keyVisual(k tea.KeyMsg) {
 			return
 		}
 		m.startMove(ids)
+	case "=":
+		ids := m.visualIDs()
+		m.mode = modeNormal
+		if len(ids) == 0 {
+			return
+		}
+		m.checkpoint()
+		if err := m.b.Organize(ids); err != nil {
+			m.undo = m.undo[:len(m.undo)-1]
+			m.msg = err.Error()
+			return
+		}
+		m.msg = fmt.Sprintf("organized %d nodes", len(ids))
+		m.save()
 	case "d", "x":
 		ids := m.visualIDs()
 		m.mode = modeNormal
@@ -649,7 +663,7 @@ var help = map[mode]string{
 	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
-	modeVisual:  "hjkl extend · m move together · d delete · v block / V rows · esc cancel",
+	modeVisual:  "hjkl extend · = organize · m move together · d delete · v block / V rows · esc cancel",
 }
 
 func (m Model) View() string {

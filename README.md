@@ -34,7 +34,7 @@ Plain files, so the directory can be a git repo of its own.
 | `o` / `O` | Insert a node in the free cell directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). Nothing else moves; if that cell is taken, off the board, or an edge would turn sideways, it reports an error instead |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
-| `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it |
+| `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it, `=` organizes it |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
 | `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels) and logs `Completed: <comment>` to the thread. On a done node it reopens right away (`Reopened`) |
 | `Enter` | Open the node in vim (strategy, thread index, entry) |
@@ -44,6 +44,17 @@ Plain files, so the directory can be a git repo of its own.
 | `q` | Quit |
 
 New nodes ask for a title right away; `Esc` on that prompt discards the node.
+
+## Organizing
+
+`=` on a visual selection tidies it up without touching any edge. Linked
+nodes are re-layered from the selection's top row, each as high as its
+predecessors allow (a child lands right under its parent, empty rows close
+up), and every row is ordered by the mean column of the predecessors, which
+lines chains up vertically and undoes crossings. Unlinked nodes in the
+selection and everything outside it stay put. If a full row would push a node
+level with or below one of its successors outside the selection, nothing
+changes and an error is shown. One `u` undoes it.
 
 ## Rules
 

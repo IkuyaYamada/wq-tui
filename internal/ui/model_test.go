@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -383,5 +384,26 @@ func TestLeavingInputSchedulesSecondSwitch(t *testing.T) {
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("leaving the prompt should schedule the second switch")
+	}
+}
+
+func TestVisualEqualsOrganizes(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	// A at (0,0); B dropped far away at (3,4), then connected A → B.
+	m = press(t, m, "a", "A", "<enter>", "j", "j", "j", "l", "l", "l", "l", "a", "B", "<enter>")
+	m = press(t, m, "g", "c", "j", "j", "j", "l", "l", "l", "l", "<enter>")
+	if !hasEdge(m.b, "A", "B") {
+		t.Fatalf("setup: %v", m.b.Edges)
+	}
+	m = press(t, m, "g", "V", "j", "j", "j", "=")
+	if got := titles(m.b)["B"]; got != [2]int{1, 0} {
+		t.Errorf("B at %v after =", got)
+	}
+	if m.mode != modeNormal || !strings.HasPrefix(m.msg, "organized") {
+		t.Errorf("mode %v msg %q", m.mode, m.msg)
+	}
+	m = press(t, m, "u")
+	if got := titles(m.b)["B"]; got != [2]int{3, 4} {
+		t.Errorf("undo: B at %v", got)
 	}
 }

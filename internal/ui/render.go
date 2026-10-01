@@ -296,7 +296,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		}
 		drawCard(cv, l, n, border, title, bold)
 	}
-	if !onCursor && v.cursorRow < len(l.rowY) {
+	if !onCursor && v.cursorRow >= 0 && v.cursorRow < len(l.rowY) {
 		drawFrame(cv, l, v.cursorRow, v.cursorCol, frameDashed, v.cursorSt)
 	}
 
