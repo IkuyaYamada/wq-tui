@@ -38,13 +38,14 @@ type Model struct {
 	// The cursor is a cell, not a node, so it can rest on empty cells.
 	row, col int
 
-	mode     mode
-	input    textinput.Model
-	inputNew bool   // the node being titled was just created; Esc discards it
-	prevCur  [2]int // cursor to restore when a new node is discarded
-	moveIDs  []string
-	moveOrig *board.Board
-	moveCur  [2]int
+	mode      mode
+	input     textinput.Model
+	inputNew  bool   // the node being titled was just created; Esc discards it
+	inputDone bool   // the prompt asks for a completion comment, not a title
+	prevCur   [2]int // cursor to restore when a new node is discarded
+	moveIDs   []string
+	moveOrig  *board.Board
+	moveCur   [2]int
 
 	// Visual mode selects the rectangle between visAnchor and the cursor,
 	// or whole rows when visLine is set.
@@ -271,7 +272,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		m.inputNew = false
-		return m.startInput(n.Title)
+		return m.startInput("title> ", n.Title)
 	case "m":
 		if n == nil {
 			return nil
@@ -287,7 +288,13 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		if n == nil {
 			return nil
 		}
-		m.toggleDone()
+		if n.Done {
+			m.toggleDone("")
+			return nil
+		}
+		// Completing asks for a comment first; Esc leaves the node open.
+		m.inputDone = true
+		return m.startInput("done> ", "")
 	case "enter":
 		if n == nil {
 			return nil
@@ -368,18 +375,35 @@ func (m *Model) startNew(key string) tea.Cmd {
 	}
 	m.cursorTo(m.b.Node(nn.ID))
 	m.inputNew = true
-	return m.startInput("")
+	return m.startInput("title> ", "")
 }
 
-func (m *Model) startInput(value string) tea.Cmd {
+func (m *Model) startInput(prompt, value string) tea.Cmd {
 	m.ime.Select(m.imePrev)
 	m.mode = modeInput
+	m.input.Prompt = prompt
 	m.input.SetValue(value)
 	m.input.CursorEnd()
 	return m.input.Focus()
 }
 
 func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
+	if m.inputDone {
+		switch k.String() {
+		case "enter", "esc", "ctrl+c":
+			m.input.Blur()
+			m.mode = modeNormal
+			m.inputDone = false
+			m.toASCII()
+			if k.String() == "enter" {
+				m.toggleDone(strings.TrimSpace(m.input.Value()))
+			}
+			return nil
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(k)
+		return cmd
+	}
 	switch k.String() {
 	case "enter":
 		title := strings.TrimSpace(m.input.Value())
@@ -554,8 +578,9 @@ func (m *Model) keyConnect(k tea.KeyMsg) {
 	}
 }
 
-// toggleDone flips the done flag and logs it as a thread entry.
-func (m *Model) toggleDone() {
+// toggleDone flips the done flag and logs it as a thread entry, with the
+// comment after the event: "Completed: <comment>".
+func (m *Model) toggleDone(comment string) {
 	m.checkpoint()
 	n := m.selected()
 	n.Done = !n.Done
@@ -567,6 +592,9 @@ func (m *Model) toggleDone() {
 		event = "Completed"
 	}
 	m.save()
+	if comment != "" {
+		event += ": " + comment
+	}
 	if _, err := thread.Add(board.NodeDir(m.dir, n.ID), time.Now(), event+"\n"); err != nil {
 		m.msg = "thread: " + err.Error()
 	}
@@ -597,7 +625,7 @@ var (
 
 var help = map[mode]string{
 	modeNormal:  "hjkl cursor · w/b next/prev node · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · u/^r undo/redo · q quit",
-	modeInput:   "⏎ save · esc cancel",
+	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeVisual:  "hjkl extend · m move together · d delete · v block / V rows · esc cancel",

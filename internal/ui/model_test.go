@@ -80,7 +80,7 @@ func TestRhythmicAddConnectComplete(t *testing.T) {
 		t.Errorf("雑務 at %v after move", got)
 	}
 
-	m = press(t, m, "<space>")
+	m = press(t, m, "<space>", "<enter>")
 	if n := m.selected(); !n.Done {
 		t.Errorf("space did not complete %s", n.Title)
 	}
@@ -252,7 +252,7 @@ func TestFullWidthKeysWorkOnBoard(t *testing.T) {
 	if got := titles(m.b); got["全角"] != [2]int{0, 0} || got["ｊｋ"] != [2]int{1, 0} {
 		t.Errorf("full-width a/o not recognised, or title was converted: %v", got)
 	}
-	m = press(t, m, "ｋ", "　")
+	m = press(t, m, "ｋ", "　", "<enter>")
 	if n := m.selected(); n == nil || n.Title != "全角" || !n.Done {
 		t.Errorf("full-width k / ideographic space not recognised: %+v", n)
 	}
@@ -303,5 +303,45 @@ func TestOReportsWhenTheCellBelowIsTaken(t *testing.T) {
 	m = press(t, m, "a", "上", "<enter>", "o", "下", "<enter>", "k", "o")
 	if m.mode != modeNormal || len(m.b.Nodes) != 2 || m.msg == "" {
 		t.Errorf("mode %v nodes %d msg %q", m.mode, len(m.b.Nodes), m.msg)
+	}
+}
+
+func TestCompletingAsksForAComment(t *testing.T) {
+	dir := t.TempDir()
+	f := &fakeIME{current: "Japanese"}
+	m := New(dir, &board.Board{}, WithIME(f))
+	m = press(t, m, "a", "設計", "<enter>")
+	id := m.selected().ID
+
+	// Space opens the prompt in Japanese; Esc leaves the node open.
+	m = press(t, m, "<space>")
+	if m.mode != modeInput || f.current != "Japanese" || m.selected().Done {
+		t.Fatalf("mode %v ime %s done %v", m.mode, f.current, m.selected().Done)
+	}
+	m = press(t, m, "<esc>")
+	if m.selected().Done || f.current != "ABC" {
+		t.Fatalf("esc should cancel: done %v ime %s", m.selected().Done, f.current)
+	}
+
+	m = press(t, m, "<space>", "スキーマ確定", "<enter>")
+	if !m.selected().Done {
+		t.Fatal("enter should complete")
+	}
+	entries, _ := thread.List(board.NodeDir(dir, id))
+	if len(entries) != 1 || entries[0].Summary() != "Completed: スキーマ確定" {
+		t.Errorf("entries %+v", entries)
+	}
+
+	// Reopening does not ask.
+	m = press(t, m, "<space>")
+	if m.mode != modeNormal || m.selected().Done {
+		t.Errorf("reopen: mode %v done %v", m.mode, m.selected().Done)
+	}
+	if m.input.Prompt != "done> " {
+		t.Errorf("prompt was %q", m.input.Prompt)
+	}
+	m = press(t, m, "i")
+	if m.input.Prompt != "title> " {
+		t.Errorf("rename prompt %q", m.input.Prompt)
 	}
 }

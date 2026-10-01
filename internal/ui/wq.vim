@@ -113,7 +113,7 @@ setlocal nonumber norelativenumber nowrap cursorline nomodifiable winfixheight
 setlocal statusline=\ thread\ \ ⏎\ open\ ·\ a\ new\ ·\ D\ delete\ ·\ q\ back
 syntax match wqWhen /\d\d\/\d\d \d\d:\d\d/
 syntax match wqMark /^▸/
-syntax match wqLog /\v  (Completed|Reopened)$/
+syntax match wqLog /\v  \zs(Completed|Reopened)/
 syntax match wqHint /^  no entries yet.*/
 highlight default link wqWhen Comment
 highlight default link wqMark Title
