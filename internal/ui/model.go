@@ -64,8 +64,9 @@ type Model struct {
 
 	// ime switches to ASCII on the board and back to imePrev (the input
 	// method in use before, e.g. Japanese) while a title is being typed.
-	ime     ime.Switcher
-	imePrev string
+	ime        ime.Switcher
+	imePrev    string
+	asciiAgain bool // schedule a second switch to ASCII after this update
 }
 
 // Option configures a Model.
@@ -83,6 +84,7 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 		o(&m)
 	}
 	m.toASCII()
+	m.asciiAgain = false
 	return m
 }
 
@@ -92,7 +94,15 @@ func (m *Model) toASCII() {
 	if prev := m.ime.ASCII(); prev != "" {
 		m.imePrev = prev
 	}
+	m.asciiAgain = true
 }
+
+// asciiAgainMsg repeats the switch to ASCII shortly after leaving a prompt
+// or vim: when Enter both commits the IME conversion and closes the prompt,
+// the input method can reassert itself after the first switch.
+type asciiAgainMsg struct{}
+
+const asciiAgainDelay = 150 * time.Millisecond
 
 func (m Model) Init() tea.Cmd { return nil }
 
@@ -168,6 +178,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case asciiAgainMsg:
+		if m.mode != modeInput {
+			if prev := m.ime.ASCII(); prev != "" {
+				m.imePrev = prev
+			}
+		}
 	case editorDoneMsg:
 		if msg.err != nil {
 			m.msg = "vim: " + msg.err.Error()
@@ -200,6 +216,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	m.ensureVisible()
 	m.refreshRoutes()
+	if m.asciiAgain {
+		m.asciiAgain = false
+		again := tea.Tick(asciiAgainDelay, func(time.Time) tea.Msg { return asciiAgainMsg{} })
+		cmd = tea.Batch(cmd, again)
+	}
 	return m, cmd
 }
 

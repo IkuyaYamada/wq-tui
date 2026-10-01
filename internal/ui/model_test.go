@@ -345,3 +345,43 @@ func TestCompletingAsksForAComment(t *testing.T) {
 		t.Errorf("rename prompt %q", m.input.Prompt)
 	}
 }
+
+func TestIMESwitchesAgainAfterTheComment(t *testing.T) {
+	f := &fakeIME{current: "Japanese"}
+	m := New(t.TempDir(), &board.Board{}, WithIME(f))
+	m = press(t, m, "a", "設計", "<enter>", "<space>", "完了", "<enter>")
+	if f.current != "ABC" {
+		t.Fatalf("after the comment: %s", f.current)
+	}
+
+	// The IME takes over again while finishing the conversion...
+	f.current = "Japanese"
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if cmd != nil {
+		t.Errorf("a plain board key should not schedule another switch")
+	}
+	m = next.(Model)
+
+	// ...and the delayed second switch brings ASCII back.
+	next, _ = m.Update(asciiAgainMsg{})
+	m = next.(Model)
+	if f.current != "ABC" {
+		t.Errorf("second switch: %s", f.current)
+	}
+
+	// While a prompt is open the delayed switch must not fire.
+	m = press(t, m, "i")
+	next, _ = m.Update(asciiAgainMsg{})
+	if f.current != "Japanese" {
+		t.Errorf("delayed switch fired during input: %s", f.current)
+	}
+}
+
+func TestLeavingInputSchedulesSecondSwitch(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{}, WithIME(&fakeIME{current: "Japanese"}))
+	m = press(t, m, "a", "設計")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("leaving the prompt should schedule the second switch")
+	}
+}
