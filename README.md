@@ -66,32 +66,30 @@ changes and an error is shown. One `u` undoes it.
 
 ## Opening a node
 
-`Enter` on a node opens it straight in vim, laid out as
+`Enter` on a node opens it straight in vim as two panes: the strategy on the
+left, the thread on the right. The thread pane shows the entry index; `Enter`
+opens an entry in that same pane and `Esc` (normal mode) saves it and goes
+back to the index.
 
 ```
- strategy.md            │ ▸ 10/01 15:20  ログ見たら500多発   ← thread index
-                        │   10/01 14:03  クエリ流した
-                        │   10/01 16:43  Completed
-                        ├──────────────────────────────────
-                        │ (the entry picked in the index)
+ strategy.md            │  10/01 14:03  クエリ流した
+                        │▸ 10/01 15:20  ログ見たら500多発   ← Enter opens it here
+                        │  10/01 16:43  Completed: スキーマ確定
 ```
 
-`C-w w` cycles through the three windows, and `-` jumps back to the index
-from anywhere (reopening its window if it was closed). The index window is
-pinned to its buffer (`winfixbuf`), so buffer-switching maps such as `:bnext`
-cannot replace it. Strategy and thread split the width half and half. In the
-index:
+| Key | Where | Action |
+| --- | --- | --- |
+| `Enter` / `o` | index | Open the entry under the cursor |
+| `a` | index | New entry, in insert mode (never written if left untouched) |
+| `D` | index | Delete the entry (after a prompt; moved to `thread/.trash/`) |
+| `Esc` | entry | Save and return to the index (`<nowait>`, so an `<Esc><Esc>` map does not delay it) |
+| `-` | anywhere | Show the index in the thread pane |
+| `C-w w` | anywhere | Switch panes |
+| `q` | anywhere | Save everything and return to the board |
 
-| Key | Action |
-| --- | --- |
-| `Enter` / `o` | Open the entry under the cursor below |
-| `a` | New entry below, in insert mode (never written if left untouched) |
-| `D` | Delete the entry (after a prompt; moved to `thread/.trash/`) |
-
-`q` in normal mode saves everything and returns to the board; entries saved
-empty are removed. The layout comes from `internal/ui/wq.vim`, embedded in the
-binary and sourced with `vim -S`, so it only applies to these sessions.
-`WQ_VIM` overrides the vim binary.
+Entries saved empty are removed on the way out. The layout comes from
+`internal/ui/wq.vim`, embedded in the binary and sourced with `vim -S`, so it
+only applies to these sessions. `WQ_VIM` overrides the vim binary.
 
 `strategy.md` starts with a small header that carries the node's title:
 

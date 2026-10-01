@@ -27,27 +27,19 @@ func TestNodeVimScript(t *testing.T) {
 	out := filepath.Join(dir, "out.txt")
 	check := filepath.Join(dir, "check.vim")
 	os.WriteFile(check, []byte(`redir! > `+out+`
-echo "wins=" . winnr("$") . " cur=" . bufname("%")
-echo join(getbufline(bufnr("[thread]"), 1, "$"), "|")
+echo "wins=" . winnr("$") . " cur=" . bufname("%") . " line=" . line(".")
+echo join(getline(1, "$"), "|")
 normal gg
 execute "normal \<CR>"
-echo "opened=" . fnamemodify(bufname("%"), ":t")
-echo join(getbufline(bufnr("[thread]"), 1, "$"), "|")
-wincmd k
-silent! bnext
-echo "after bnext=" . bufname("%")
-1wincmd w
+echo "opened wins=" . winnr("$") . " cur=" . fnamemodify(bufname("%"), ":t")
+call setline(2, "追記")
+execute "normal \<Esc>"
+echo "back cur=" . bufname("%") . " line=" . line(".")
+echo join(getline(1, "$"), "|")
+wincmd h
 echo "strategy width=" . winwidth(0) . "/" . &columns
 normal -
-echo "dash=" . bufname("%")
-wincmd j
-close
-wincmd t
-normal -
-normal gg
-execute "normal \<CR>"
-echo "reopened wins=" . winnr("$") . " cur=" . fnamemodify(bufname("%"), ":t")
-normal -
+echo "dash cur=" . bufname("%")
 normal a
 call setline(1, "新しいメモ")
 redir END
@@ -64,22 +56,18 @@ normal q
 	// :silent hides file messages on screen but :redir still records them.
 	var lines []string
 	for _, l := range strings.Split(strings.TrimSpace(string(got)), "\n") {
-		// The E1513 lines are winfixbuf refusing :bnext in the index, which
-		// is exactly what is being checked.
-		if l != "" && !strings.HasPrefix(l, `"`) && !strings.HasPrefix(l, "Error detected") &&
-			!strings.HasPrefix(l, "line ") && !strings.HasPrefix(l, "E1513") {
+		if l != "" && !strings.HasPrefix(l, `"`) {
 			lines = append(lines, l)
 		}
 	}
 	want := []string{
-		"wins=3 cur=[thread]",
-		"  10/01 14:03  クエリ流した|▸ 10/01 15:20  ログ見たら500多発",
-		"opened=20261001-140300.md",
+		"wins=2 cur=[thread] line=2",
+		"  10/01 14:03  クエリ流した|  10/01 15:20  ログ見たら500多発",
+		"opened wins=2 cur=20261001-140300.md",
+		"back cur=[thread] line=1",
 		"▸ 10/01 14:03  クエリ流した|  10/01 15:20  ログ見たら500多発",
-		"after bnext=[thread]",
 		"strategy width=40/80",
-		"dash=[thread]",
-		"reopened wins=3 cur=20261001-140300.md",
+		"dash cur=[thread]",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
@@ -87,6 +75,9 @@ normal q
 	files, _ := filepath.Glob(filepath.Join(threadDir, "*.md"))
 	if len(files) != 3 {
 		t.Fatalf("new entry not saved by q: %v", files)
+	}
+	if body, _ := os.ReadFile(filepath.Join(threadDir, "20261001-140300.md")); string(body) != "クエリ流した\n追記\n" {
+		t.Errorf("Esc should save the entry: %q", body)
 	}
 	for _, f := range files {
 		if name := filepath.Base(f); name == "20261001-140300.md" || name == "20261001-152000.md" {
