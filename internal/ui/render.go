@@ -94,7 +94,7 @@ var styles = map[style]lipgloss.Style{
 	stTitleSel:     lipgloss.NewStyle().Bold(true),
 	stTitleDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Strikethrough(true),
 	stEdge:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-	stEdgeHL:       lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
+	stEdgeHL:       lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
 	stDot:          lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 }
 
