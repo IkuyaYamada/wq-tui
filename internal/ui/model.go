@@ -85,7 +85,24 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	}
 	m.toASCII()
 	m.asciiAgain = false
+	m.cursorTo(firstOpen(b))
 	return m
+}
+
+// firstOpen is the incomplete node in the earliest phase (lowest row, then
+// leftmost), or nil when everything is done.
+func firstOpen(b *board.Board) *board.Node {
+	var best *board.Node
+	for i := range b.Nodes {
+		n := &b.Nodes[i]
+		if n.Done {
+			continue
+		}
+		if best == nil || n.Row < best.Row || (n.Row == best.Row && n.Col < best.Col) {
+			best = n
+		}
+	}
+	return best
 }
 
 // toASCII puts the keyboard in ASCII for board keys, remembering what was

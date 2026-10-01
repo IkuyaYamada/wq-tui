@@ -407,3 +407,25 @@ func TestVisualEqualsOrganizes(t *testing.T) {
 		t.Errorf("undo: B at %v", got)
 	}
 }
+
+func TestStartsOnFirstOpenNode(t *testing.T) {
+	n := func(id string, row, col int, done bool) board.Node {
+		return board.Node{ID: id, Title: id, Row: row, Col: col, Done: done}
+	}
+	b := &board.Board{Nodes: []board.Node{
+		n("top", 0, 0, true), n("done2", 1, 0, true),
+		n("right", 2, 4, false), n("left", 2, 1, false), n("later", 3, 0, false),
+	}}
+	m := New(t.TempDir(), b)
+	if got := m.selected(); got == nil || got.ID != "left" {
+		t.Errorf("cursor on %+v, want left", got)
+	}
+
+	for i := range b.Nodes {
+		b.Nodes[i].Done = true
+	}
+	m = New(t.TempDir(), b)
+	if m.row != 0 || m.col != 0 {
+		t.Errorf("all done: cursor %d,%d", m.row, m.col)
+	}
+}
