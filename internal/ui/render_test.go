@@ -66,3 +66,20 @@ func TestRowsStayPutWhenEdgesChange(t *testing.T) {
 		}
 	}
 }
+
+func TestTitleRows(t *testing.T) {
+	cases := []struct {
+		title string
+		want  []string
+	}{
+		{"設計", []string{"設計"}},
+		{"既存テーブルの依存", []string{"既存テーブ", "ルの依存"}},
+		{"既存テーブルの依存関係を全部洗い出す", []string{"既存テーブ", "ルの依存…"}},
+	}
+	for _, c := range cases {
+		got := titleRows(c.title, 10)
+		if strings.Join(got, "|") != strings.Join(c.want, "|") {
+			t.Errorf("%q: got %q want %q", c.title, got, c.want)
+		}
+	}
+}

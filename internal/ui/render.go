@@ -16,9 +16,13 @@ func init() {
 }
 
 const (
-	cardH  = 3
-	gap    = 2
-	margin = 1
+	cardH = 2 + titleLines // borders plus room for a two-line title
+
+	// titleLines is how many lines a card gives its title before cutting it
+	// off with "…". Every card reserves them, so row heights never change.
+	titleLines = 2
+	gap        = 2
+	margin     = 1
 
 	// bufferRows empty rows always follow the lowest node, so there is
 	// somewhere to move the cursor and drop a new node.
@@ -27,7 +31,7 @@ const (
 	// laneH is the fixed gap between rows that edges run through. It never
 	// depends on the edges themselves, so moving or connecting a node does
 	// not shift every row below it.
-	laneH = 2
+	laneH = 1
 )
 
 // layout maps grid cells to canvas coordinates. Rows are separated by
@@ -168,18 +172,35 @@ var (
 
 func drawFrame(cv *canvas, l layout, row, col int, f [6]rune, border style) {
 	x, y := l.colX(col), l.rowY[row]
-	w := l.cardW
+	w, bottom := l.cardW, y+cardH-1
 	cv.set(x, y, f[0], border)
 	cv.set(x+w-1, y, f[2], border)
-	cv.set(x, y+1, f[3], border)
-	cv.set(x+w-1, y+1, f[3], border)
-	cv.set(x, y+2, f[4], border)
-	cv.set(x+w-1, y+2, f[5], border)
+	cv.set(x, bottom, f[4], border)
+	cv.set(x+w-1, bottom, f[5], border)
 	for i := 1; i < w-1; i++ {
 		cv.set(x+i, y, f[1], border)
-		cv.set(x+i, y+1, ' ', stPlain)
-		cv.set(x+i, y+2, f[1], border)
+		cv.set(x+i, bottom, f[1], border)
 	}
+	for yy := y + 1; yy < bottom; yy++ {
+		cv.set(x, yy, f[3], border)
+		cv.set(x+w-1, yy, f[3], border)
+		for i := 1; i < w-1; i++ {
+			cv.set(x+i, yy, ' ', stPlain)
+		}
+	}
+}
+
+// titleRows wraps a title into at most titleLines lines of width w, ending
+// the last one with "…" when the title does not fit.
+func titleRows(title string, w int) []string {
+	var rows []string
+	rest := title
+	for len(rows) < titleLines-1 && runewidth.StringWidth(rest) > w {
+		head := runewidth.Truncate(rest, w, "")
+		rows = append(rows, head)
+		rest = rest[len(head):]
+	}
+	return append(rows, runewidth.Truncate(rest, w, "…"))
 }
 
 func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool) {
@@ -196,7 +217,9 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	if label == "" {
 		label = "…"
 	}
-	cv.text(x+2, y+1, runewidth.Truncate(label, w-4, "…"), title)
+	for i, line := range titleRows(label, w-4) {
+		cv.text(x+2, y+1+i, line, title)
+	}
 }
 
 // edgeRune turns a set of connection bits into a box-drawing character.
