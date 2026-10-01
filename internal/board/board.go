@@ -58,6 +58,8 @@ var (
 	ErrTopRow     = errors.New("no row above the top row")
 	ErrAboveTaken = errors.New("the cell above is taken")
 	ErrPredAbove  = errors.New("an incoming node sits on the row above; its edge would go sideways")
+	ErrBelowTaken = errors.New("the cell below is taken")
+	ErrSuccBelow  = errors.New("an outgoing node sits on the row below; its edge would go sideways")
 	ErrSelf       = errors.New("cannot connect a node to itself")
 )
 
@@ -135,14 +137,6 @@ func (b *Board) Sort() {
 	})
 }
 
-func (b *Board) shiftRows(from int) {
-	for i := range b.Nodes {
-		if b.Nodes[i].Row >= from {
-			b.Nodes[i].Row++
-		}
-	}
-}
-
 // NearestEmpty finds the empty cell closest to (row, col) by Manhattan
 // distance, breaking ties by exploring right, down, left, up.
 func (b *Board) NearestEmpty(row, col int) (int, int) {
@@ -175,15 +169,18 @@ func (b *Board) Add(n Node, row, col int) {
 	b.Nodes = append(b.Nodes, n)
 }
 
-// InsertAfter places n directly below id, pushes every lower row down by
-// one, and hands id's outgoing edges over to n: A → B becomes A → n → B.
+// InsertAfter places n in the free cell directly below id and hands id's
+// outgoing edges over to n: A → B becomes A → n → B. Nothing else moves; if
+// that cell cannot take n, it returns an error instead of making room.
 func (b *Board) InsertAfter(id string, n Node) error {
 	a := b.Node(id)
 	if a == nil {
 		return ErrNotFound
 	}
 	row, col := a.Row, a.Col
-	b.shiftRows(row + 1)
+	if err := b.roomBelow(id, row, col); err != nil {
+		return err
+	}
 	n.Row, n.Col = row+1, col
 	for i := range b.Edges {
 		if b.Edges[i].From == id {
@@ -215,6 +212,18 @@ func (b *Board) InsertBefore(id string, n Node) error {
 	}
 	b.Nodes = append(b.Nodes, n)
 	b.Edges = append(b.Edges, Edge{From: n.ID, To: id})
+	return nil
+}
+
+func (b *Board) roomBelow(id string, row, col int) error {
+	if b.At(row+1, col) != nil {
+		return ErrBelowTaken
+	}
+	for _, s := range b.Succs(id) {
+		if b.Node(s).Row <= row+1 {
+			return ErrSuccBelow
+		}
+	}
 	return nil
 }
 

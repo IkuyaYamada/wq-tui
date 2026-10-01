@@ -297,3 +297,11 @@ func TestOReportsWhenThereIsNoRoomAbove(t *testing.T) {
 		t.Errorf("refused O should not leave an undo step: %d", len(m.undo))
 	}
 }
+
+func TestOReportsWhenTheCellBelowIsTaken(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "上", "<enter>", "o", "下", "<enter>", "k", "o")
+	if m.mode != modeNormal || len(m.b.Nodes) != 2 || m.msg == "" {
+		t.Errorf("mode %v nodes %d msg %q", m.mode, len(m.b.Nodes), m.msg)
+	}
+}

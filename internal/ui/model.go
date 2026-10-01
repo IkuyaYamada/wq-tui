@@ -353,10 +353,12 @@ func (m *Model) startNew(key string) tea.Cmd {
 	switch {
 	case cur == nil:
 		m.b.Add(nn, m.row, m.col)
-	case key == "o":
-		_ = m.b.InsertAfter(cur.ID, nn)
-	case key == "O":
-		if err := m.b.InsertBefore(cur.ID, nn); err != nil {
+	case key == "o" || key == "O":
+		insert := m.b.InsertAfter
+		if key == "O" {
+			insert = m.b.InsertBefore
+		}
+		if err := insert(cur.ID, nn); err != nil {
 			m.undo = m.undo[:len(m.undo)-1]
 			m.msg = err.Error()
 			return nil

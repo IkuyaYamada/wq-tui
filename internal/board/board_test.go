@@ -19,21 +19,39 @@ func pos(t *testing.T, b *Board, id string) [2]int {
 }
 
 func TestInsertAfterTakesOverOutgoingEdges(t *testing.T) {
-	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 1, 0), node("C", 1, 3)}, Edges: []Edge{{"A", "B"}}}
+	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 2, 0), node("C", 2, 3)}, Edges: []Edge{{"A", "B"}, {"A", "C"}}}
 	if err := b.InsertAfter("A", node("N", 0, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if got := pos(t, b, "N"); got != [2]int{1, 0} {
 		t.Errorf("N at %v", got)
 	}
-	if got := pos(t, b, "B"); got != [2]int{2, 0} {
-		t.Errorf("B at %v", got)
+	if pos(t, b, "B") != [2]int{2, 0} || pos(t, b, "C") != [2]int{2, 3} {
+		t.Errorf("nothing else should move: B %v C %v", pos(t, b, "B"), pos(t, b, "C"))
 	}
-	if got := pos(t, b, "C"); got != [2]int{2, 3} {
-		t.Errorf("C at %v, rows below should shift too", got)
+	for _, e := range []Edge{{"A", "N"}, {"N", "B"}, {"N", "C"}} {
+		if !b.HasEdge(e.From, e.To) {
+			t.Errorf("missing %v in %v", e, b.Edges)
+		}
 	}
-	if !b.HasEdge("A", "N") || !b.HasEdge("N", "B") || b.HasEdge("A", "B") {
-		t.Errorf("edges %v", b.Edges)
+}
+
+func TestInsertAfterRefusesWithoutRoom(t *testing.T) {
+	cases := []struct {
+		b    *Board
+		want error
+	}{
+		{&Board{Nodes: []Node{node("A", 0, 0), node("X", 1, 0)}}, ErrBelowTaken},
+		{&Board{Nodes: []Node{node("A", 0, 0), node("S", 1, 3)}, Edges: []Edge{{"A", "S"}}}, ErrSuccBelow},
+	}
+	for _, c := range cases {
+		before := len(c.b.Nodes)
+		if err := c.b.InsertAfter("A", node("N", 0, 0)); err != c.want {
+			t.Errorf("err = %v, want %v", err, c.want)
+		}
+		if len(c.b.Nodes) != before {
+			t.Errorf("board changed on error")
+		}
 	}
 }
 
