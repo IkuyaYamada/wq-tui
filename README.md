@@ -65,7 +65,11 @@ New nodes ask for a title right away; `Esc` on that prompt discards the node.
                         │ (the entry picked in the index)
 ```
 
-`C-w w` cycles through the three windows. In the index:
+`C-w w` cycles through the three windows, and `-` jumps back to the index
+from anywhere (reopening its window if it was closed). The index window is
+pinned to its buffer (`winfixbuf`), so buffer-switching maps such as `:bnext`
+cannot replace it. Strategy and thread split the width half and half. In the
+index:
 
 | Key | Action |
 | --- | --- |

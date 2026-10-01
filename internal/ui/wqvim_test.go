@@ -34,6 +34,20 @@ execute "normal \<CR>"
 echo "opened=" . fnamemodify(bufname("%"), ":t")
 echo join(getbufline(bufnr("[thread]"), 1, "$"), "|")
 wincmd k
+silent! bnext
+echo "after bnext=" . bufname("%")
+1wincmd w
+echo "strategy width=" . winwidth(0) . "/" . &columns
+normal -
+echo "dash=" . bufname("%")
+wincmd j
+close
+wincmd t
+normal -
+normal gg
+execute "normal \<CR>"
+echo "reopened wins=" . winnr("$") . " cur=" . fnamemodify(bufname("%"), ":t")
+normal -
 normal a
 call setline(1, "新しいメモ")
 redir END
@@ -50,7 +64,10 @@ normal q
 	// :silent hides file messages on screen but :redir still records them.
 	var lines []string
 	for _, l := range strings.Split(strings.TrimSpace(string(got)), "\n") {
-		if l != "" && !strings.HasPrefix(l, `"`) {
+		// The E1513 lines are winfixbuf refusing :bnext in the index, which
+		// is exactly what is being checked.
+		if l != "" && !strings.HasPrefix(l, `"`) && !strings.HasPrefix(l, "Error detected") &&
+			!strings.HasPrefix(l, "line ") && !strings.HasPrefix(l, "E1513") {
 			lines = append(lines, l)
 		}
 	}
@@ -59,6 +76,10 @@ normal q
 		"  10/01 14:03  クエリ流した|▸ 10/01 15:20  ログ見たら500多発",
 		"opened=20261001-140300.md",
 		"▸ 10/01 14:03  クエリ流した|  10/01 15:20  ログ見たら500多発",
+		"after bnext=[thread]",
+		"strategy width=40/80",
+		"dash=[thread]",
+		"reopened wins=3 cur=20261001-140300.md",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))

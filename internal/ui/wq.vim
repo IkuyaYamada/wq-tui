@@ -4,8 +4,9 @@
 "               ├────────────────────────────────
 "               │ the entry picked in the index
 "
-" C-w w cycles through the three windows; q saves everything and returns to
-" wq. g:wq_thread_dir (the node's thread/ directory) must be set first.
+" C-w w cycles through the three windows, - jumps back to the index from
+" anywhere, and q saves everything and returns to wq. g:wq_thread_dir (the
+" node's thread/ directory) must be set first.
 
 if !exists('g:wq_thread_dir')
   finish
@@ -62,9 +63,44 @@ function! s:newname() abort
   return path
 endfunction
 
+" The index window is pinned to its buffer (winfixbuf), so buffer-switching
+" maps such as :bnext cannot push it out; its window-local look is set here
+" so a recreated index window gets it too.
+function! s:style_index_window() abort
+  setlocal nonumber norelativenumber nowrap cursorline winfixheight
+  silent! setlocal winfixbuf
+  setlocal statusline=\ thread\ \ ⏎\ open\ ·\ a\ new\ ·\ D\ delete\ ·\ -\ back\ here\ ·\ q\ done
+endfunction
+
+" show_index returns to the index, reopening its window beside the strategy
+" if it was closed.
+function! s:show_index() abort
+  if !win_id2win(s:index_win)
+    if win_id2win(s:strategy_win)
+      call win_gotoid(s:strategy_win)
+    endif
+    rightbelow vsplit
+    execute 'buffer ' . s:index
+    let s:index_win = win_getid()
+    call s:style_index_window()
+  endif
+  call win_gotoid(s:index_win)
+endfunction
+
+" ensure_entry_win makes sure there is a window below the index for entries.
+function! s:ensure_entry_win() abort
+  if win_id2win(s:entry_win)
+    return
+  endif
+  call s:show_index()
+  belowright new
+  let s:entry_win = win_getid()
+endfunction
+
 " open shows path in the entry window and moves there. A new entry is not
 " written until saved, so an untouched one never reaches the disk.
 function! s:open(path, insert) abort
+  call s:ensure_entry_win()
   call win_gotoid(s:entry_win)
   silent execute 'edit ' . fnameescape(a:path)
   call s:render()
@@ -102,15 +138,16 @@ endfunction
 
 " ── layout ───────────────────────────────────────────────────────────────
 let s:strategy_win = win_getid()
-setlocal statusline=\ strategy%=%m\
+let s:entry_win = -1
+setlocal statusline=\ strategy\ \ -\ thread%=%m
+nnoremap <silent> - :call <SID>show_index()<CR>
 
 rightbelow vnew
 let s:index = bufnr('%')
 let s:index_win = win_getid()
 silent file [thread]
-setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
-setlocal nonumber norelativenumber nowrap cursorline nomodifiable winfixheight
-setlocal statusline=\ thread\ \ ⏎\ open\ ·\ a\ new\ ·\ D\ delete\ ·\ q\ back
+setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted nomodifiable
+call s:style_index_window()
 syntax match wqWhen /\d\d\/\d\d \d\d:\d\d/
 syntax match wqMark /^▸/
 syntax match wqLog /\v  \zs(Completed|Reopened)/
@@ -124,13 +161,11 @@ nnoremap <buffer> <silent> o :call <SID>open_under_cursor()<CR>
 nnoremap <buffer> <silent> a :call <SID>open(<SID>newname(), 1)<CR>
 nnoremap <buffer> <silent> D :call <SID>trash_under_cursor()<CR>
 
-belowright new
-let s:entry_win = win_getid()
 let s:files = s:entries()
 call s:open(empty(s:files) ? s:newname() : s:files[-1], 0)
 
 call win_gotoid(s:strategy_win)
-execute 'vertical resize ' . (&columns * 2 / 5)
+execute 'vertical resize ' . (&columns / 2)
 call win_gotoid(s:index_win)
 execute 'resize ' . max([3, min([len(s:files) + 1, &lines / 3])])
 normal! G
