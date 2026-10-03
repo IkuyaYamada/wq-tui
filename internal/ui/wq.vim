@@ -80,9 +80,9 @@ endfunction
 
 function! WqThreadStatus() abort
   if bufnr('%') == s:index
-    return ' thread   ⏎ open · a new · D delete · q done'
+    return ' thread   ⏎ open · a new · D delete · q save & back'
   endif
-  return ' ' . s:label(expand('%:p')) . '   esc index · q done'
+  return ' ' . s:label(expand('%:p')) . '   esc save → index · q save & back'
 endfunction
 
 " show_index puts the index in the right pane, cursor on the last entry
@@ -144,7 +144,7 @@ endfunction
 
 " ── layout ───────────────────────────────────────────────────────────────
 let s:strategy_win = win_getid()
-setlocal statusline=\ strategy%=%m
+setlocal statusline=\ strategy%m%=q\ save\ &\ back\ 
 
 rightbelow vnew
 let s:thread_win = win_getid()

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -428,7 +429,7 @@ func TestGXOpensNodeURL(t *testing.T) {
 	if len(opened) != 1 || opened[0] != "https://example.com/doc" {
 		t.Errorf("opened %v", opened)
 	}
-	// gg still goes to the top-left; a lone g then another key does nothing.
+	// gg still goes to the only (open) node; a lone g then another key does nothing.
 	m = press(t, m, "j", "l", "g", "g")
 	if m.row != 0 || m.col != 0 {
 		t.Errorf("gg: %d,%d", m.row, m.col)
@@ -698,5 +699,165 @@ func TestCtrlECtrlYScrollWithoutMovingCursor(t *testing.T) {
 	}
 	if m.scroll != 0 || m.row != 3 {
 		t.Errorf("C-y to top: scroll %d row %d", m.scroll, m.row)
+	}
+}
+
+func TestMoveAndRelabelSessionBreak(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = n.(Model)
+	m = press(t, m, "a", "A", "<enter>", "o", "B", "<enter>", "o", "C", "<enter>", "g", "g")
+	m = press(t, m, "-", "昼", "<enter>")
+
+	m = press(t, m, "j")
+	if m = press(t, m, "M"); m.mode == modeMoveBreak || m.msg == "" {
+		t.Fatal("M without a break under the row should refuse")
+	}
+	m = press(t, m, "k", "M", "j", "j")
+	if m.mode != modeMoveBreak || m.row != 2 {
+		t.Fatalf("mode %v row %d", m.mode, m.row)
+	}
+	m = press(t, m, "<enter>")
+	if want := []board.Break{{After: 2, Label: "昼"}}; !reflect.DeepEqual(m.b.Breaks, want) {
+		t.Fatalf("moved: %+v", m.b.Breaks)
+	}
+	if got := titles(m.b); got["B"] != [2]int{1, 0} || got["C"] != [2]int{2, 0} {
+		t.Errorf("moving a break must not move nodes: %v", got)
+	}
+
+	// Esc puts it back where it was.
+	m = press(t, m, "M", "k", "<esc>")
+	if br, ok := m.b.BreakAfter(2); !ok || br.Label != "昼" || m.row != 2 {
+		t.Fatalf("esc: %+v row %d", m.b.Breaks, m.row)
+	}
+
+	// i edits the label of the break being moved, wherever it lands.
+	m = press(t, m, "M", "k", "i")
+	if m.mode != modeInput || m.input.Value() != "昼" {
+		t.Fatalf("mode %v value %q", m.mode, m.input.Value())
+	}
+	m.input.SetValue("今日はここまで")
+	m = press(t, m, "<enter>")
+	if want := []board.Break{{After: 1, Label: "今日はここまで"}}; !reflect.DeepEqual(m.b.Breaks, want) {
+		t.Fatalf("relabel: %+v", m.b.Breaks)
+	}
+
+	// Undo takes back the label, then the move.
+	m = press(t, m, "u")
+	if want := []board.Break{{After: 1, Label: "昼"}}; !reflect.DeepEqual(m.b.Breaks, want) {
+		t.Errorf("undo label: %+v", m.b.Breaks)
+	}
+	m = press(t, m, "u")
+	if want := []board.Break{{After: 2, Label: "昼"}}; !reflect.DeepEqual(m.b.Breaks, want) {
+		t.Errorf("undo move: %+v", m.b.Breaks)
+	}
+}
+
+func TestGGGoesToFirstOpenNode(t *testing.T) {
+	n := func(id string, row, col int, done bool) board.Node {
+		return board.Node{ID: id, Title: id, Row: row, Col: col, Done: done}
+	}
+	b := &board.Board{Nodes: []board.Node{n("A", 0, 0, true), n("B", 1, 2, true), n("C", 1, 4, false), n("D", 2, 1, false)}}
+	m := New(t.TempDir(), b)
+	m = press(t, m, "G", "g", "g")
+	if m.row != 1 || m.col != 4 {
+		t.Errorf("gg: %d,%d, want C at 1,4", m.row, m.col)
+	}
+	for i := range m.b.Nodes {
+		m.b.Nodes[i].Done = true
+	}
+	m = press(t, m, "g", "g")
+	if m.row != 0 || m.col != 0 {
+		t.Errorf("all done: %d,%d, want 0,0", m.row, m.col)
+	}
+}
+
+func TestKPreviewsStrategyAndThread(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = n.(Model)
+	m = press(t, m, "a", "設計", "<enter>", "l", "a", "実装", "<enter>", "h")
+	id := m.selected().ID
+	nodeDir := board.NodeDir(dir, id)
+	os.MkdirAll(nodeDir, 0o755)
+	os.WriteFile(filepath.Join(nodeDir, "strategy.md"), []byte("---\ntitle: 設計\n---\n\nスキーマから決める\n"), 0o644)
+	at := time.Date(2026, 10, 1, 14, 3, 0, 0, time.Local)
+	thread.Add(nodeDir, at.Add(time.Hour), "ログ見たら500多発\n")
+	thread.Add(nodeDir, at, "クエリ流した\n")
+
+	m = press(t, m, "K")
+	view := m.View()
+	t.Log("\n" + view)
+	iS, iA, iB := strings.Index(view, "スキーマから決める"), strings.Index(view, "クエリ流した"), strings.Index(view, "ログ見たら500多発")
+	if iS < 0 || iA < iS || iB < iA {
+		t.Fatalf("want strategy, then entries oldest first: %d %d %d", iS, iA, iB)
+	}
+	if strings.Contains(view, "title: 設計") {
+		t.Error("the header should be stripped")
+	}
+
+	// It follows the cursor, hides on empty cells and closes with Esc or K.
+	m = press(t, m, "l")
+	if view := m.View(); strings.Contains(view, "スキーマから決める") || !strings.Contains(view, "no strategy yet") {
+		t.Errorf("preview should follow the cursor:\n%s", view)
+	}
+	m = press(t, m, "j")
+	if strings.Contains(m.View(), "no strategy yet") {
+		t.Error("no preview on an empty cell")
+	}
+	m = press(t, m, "k", "<esc>")
+	if strings.Contains(m.View(), "no strategy yet") {
+		t.Error("esc should close the preview")
+	}
+	m = press(t, m, "K", "K")
+	if strings.Contains(m.View(), "no strategy yet") {
+		t.Error("K again should close the preview")
+	}
+}
+
+func TestBracketSpaceCarriesTheBreak(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "A", "<enter>", "o", "B", "<enter>", "k", "-", "<enter>")
+	if _, ok := m.b.BreakAfter(0); !ok {
+		t.Fatal("break missing")
+	}
+	// ] Space under A: the new row joins A's side, the break moves down.
+	m = press(t, m, "]", "<space>")
+	if _, ok := m.b.BreakAfter(1); !ok || titles(m.b)["B"] != [2]int{2, 0} {
+		t.Errorf("] space: breaks %+v B %v", m.b.Breaks, titles(m.b)["B"])
+	}
+	// [ Space over B: the new row joins B's side, the break stays put.
+	m = press(t, m, "j", "j", "[", "<space>")
+	if _, ok := m.b.BreakAfter(1); !ok || titles(m.b)["B"] != [2]int{3, 0} {
+		t.Errorf("[ space: breaks %+v B %v", m.b.Breaks, titles(m.b)["B"])
+	}
+	// ] Space on the last row still carries a break under it down.
+	m = press(t, m, "-", "<enter>", "]", "<space>")
+	if _, ok := m.b.BreakAfter(4); !ok {
+		t.Errorf("] space on the last row: %+v", m.b.Breaks)
+	}
+}
+
+func TestStartsWithFirstOpenNodeOnTheSecondRow(t *testing.T) {
+	var nodes []board.Node
+	for r := 0; r < 12; r++ {
+		nodes = append(nodes, board.Node{ID: fmt.Sprint(r), Title: fmt.Sprint(r), Row: r, Done: r < 6})
+	}
+	b := &board.Board{Nodes: nodes}
+	b.SetBreak(2, "")
+	m := New(t.TempDir(), b)
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = n.(Model)
+	l := newLayout(m.b, m.width)
+	if m.row != 6 || m.scroll != l.rowY[5] {
+		t.Errorf("row %d scroll %d, want row 6 with row 5 (y=%d) at the top", m.row, m.scroll, l.rowY[5])
+	}
+
+	// The first row has nothing above it; a short board does not scroll.
+	m = New(t.TempDir(), &board.Board{Nodes: []board.Node{{ID: "a", Title: "a"}}})
+	n, _ = m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	if m = n.(Model); m.scroll != 0 {
+		t.Errorf("scroll %d, want 0", m.scroll)
 	}
 }

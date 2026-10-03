@@ -38,6 +38,17 @@ func (b *Board) RemoveBreak(row int) {
 	b.Breaks = out
 }
 
+// OpenRowBelow opens an empty row under row that belongs with it: a break
+// under row moves down to sit under the new row, as the rows below do.
+func (b *Board) OpenRowBelow(row int) {
+	b.InsertRow(row + 1)
+	for i := range b.Breaks {
+		if b.Breaks[i].After == row {
+			b.Breaks[i].After = row + 1
+		}
+	}
+}
+
 // insertBreakRow keeps breaks in their gaps when an empty row opens at row:
 // gaps below it move down with their rows.
 func (b *Board) insertBreakRow(row int) {
@@ -65,4 +76,25 @@ func (b *Board) deleteBreakRow(row int) {
 		out = append(out, br)
 	}
 	b.Breaks = out
+}
+
+// MoveBreak slides the break under row to the next free gap up (step -1) or
+// down (step 1), hopping over gaps that already have one and staying under
+// rows 0..last. It returns where the break landed, or false if it could not
+// move.
+func (b *Board) MoveBreak(row, step, last int) (int, bool) {
+	br, ok := b.BreakAfter(row)
+	if !ok {
+		return row, false
+	}
+	to := row + step
+	for to >= 0 && to <= last {
+		if _, taken := b.BreakAfter(to); !taken {
+			b.RemoveBreak(row)
+			b.SetBreak(to, br.Label)
+			return to, true
+		}
+		to += step
+	}
+	return row, false
 }

@@ -176,15 +176,17 @@ func (b *Board) Add(n Node, row, col int) {
 
 // InsertAfter places n directly below id and hands id's outgoing edges over
 // to n: A → B becomes A → n → B. A free cell is used as is; otherwise an
-// empty row is opened below id first, pushing the rows under it down.
+// empty row is opened below id first, pushing the rows under it down. n
+// stays in id's session: a break under id's row moves down below n instead
+// of being crossed.
 func (b *Board) InsertAfter(id string, n Node) error {
 	a := b.Node(id)
 	if a == nil {
 		return ErrNotFound
 	}
 	row, col := a.Row, a.Col
-	if !b.roomBelow(id, row, col) {
-		b.InsertRow(row + 1)
+	if _, brk := b.BreakAfter(row); brk || !b.roomBelow(id, row, col) {
+		b.OpenRowBelow(row)
 	}
 	n.Row, n.Col = row+1, col
 	for i := range b.Edges {
@@ -200,13 +202,15 @@ func (b *Board) InsertAfter(id string, n Node) error {
 // InsertBefore places n directly above id and hands id's incoming edges over
 // to n: A → B becomes A → n → B. A free cell is used as is; otherwise an
 // empty row is opened at id's row, pushing id and the rows under it down.
+// A free cell on the far side of a break over id's row is not used: n stays
+// in id's session.
 func (b *Board) InsertBefore(id string, n Node) error {
 	t := b.Node(id)
 	if t == nil {
 		return ErrNotFound
 	}
 	row, col := t.Row, t.Col
-	if b.roomAbove(id, row, col) {
+	if _, brk := b.BreakAfter(row - 1); !brk && b.roomAbove(id, row, col) {
 		n.Row, n.Col = row-1, col
 	} else {
 		b.InsertRow(row)

@@ -62,7 +62,7 @@ func routeEdges(b *board.Board, l layout) []route {
 		rt := route{from: e.From, to: e.To, srcPort: src[e], dstPort: dst[e]}
 		start := point{rt.srcPort.x, rt.srcPort.y + 1}
 		end := point{rt.dstPort.x, rt.dstPort.y - 1}
-		rt.path = shortestPath(w, start, end, blocked, usedH, usedV)
+		rt.path = shortestPath(w, start, end, blocked, usedH, usedV, l.breakY)
 		for i := 1; i < len(rt.path); i++ {
 			p, q := rt.path[i-1], rt.path[i]
 			if p.y == q.y {
@@ -153,8 +153,9 @@ func (q *pq) Push(x any)        { *q = append(*q, x.(pqItem)) }
 func (q *pq) Pop() any          { old := *q; it := old[len(old)-1]; *q = old[:len(old)-1]; return it }
 
 // shortestPath runs Dijkstra over (cell, last move) states between the
-// start row and the end row. It falls back to a straight drop if boxed in.
-func shortestPath(w int, start, end point, blocked, usedH, usedV []bool) []point {
+// start row and the end row. Lines in noH (session breaks) are only crossed
+// straight down, never run along.
+func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map[int]bool) []point {
 	if start.y > end.y {
 		return nil
 	}
@@ -191,7 +192,7 @@ func shortestPath(w int, start, end point, blocked, usedH, usedV []bool) []point
 				continue
 			}
 			nx, ny := x+delta.x, y+delta.y
-			if nx < 0 || nx >= w || ny > end.y || blocked[ny*w+nx] {
+			if nx < 0 || nx >= w || ny > end.y || blocked[ny*w+nx] || (nd != moveDown && noH[ny]) {
 				continue
 			}
 			k := ny*w + nx
@@ -247,6 +248,10 @@ func routeKey(b *board.Board, width int) string {
 	sb.WriteByte('|')
 	for _, e := range b.Edges {
 		fmt.Fprintf(&sb, "%s>%s,", e.From, e.To)
+	}
+	sb.WriteByte('|')
+	for _, br := range b.Breaks {
+		fmt.Fprintf(&sb, "%d,", br.After)
 	}
 	return sb.String()
 }

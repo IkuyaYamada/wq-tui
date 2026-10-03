@@ -117,3 +117,36 @@ func TestDoneNoteOnSecondLine(t *testing.T) {
 		t.Error("the note must not change the layout")
 	}
 }
+
+func TestBreakGetsItsOwnLineEdgesOnlyCross(t *testing.T) {
+	b := sample()
+	b.SetBreak(0, "昼休み")
+	b.SetBreak(1, "")
+	l := newLayout(b, 120)
+	if plainRow1 := newLayout(sample(), 120).rowY[1]; l.rowY[1] != plainRow1+1 {
+		t.Errorf("a break should add one line: row 1 at %d, want %d", l.rowY[1], plainRow1+1)
+	}
+	routes := routeEdges(b, l)
+	for _, r := range routes {
+		if len(r.path) == 0 {
+			t.Fatalf("%s→%s has no path", r.from, r.to)
+		}
+		for i := 1; i < len(r.path); i++ {
+			if p, q := r.path[i-1], r.path[i]; p.y == q.y && l.breakY[p.y] {
+				t.Errorf("%s→%s runs along the break line at y=%d", r.from, r.to, p.y)
+			}
+		}
+	}
+	cv := renderBoard(b, l, routes, view{cursorRow: -1})
+	t.Log("\n" + plain(cv))
+	for y := range l.breakY {
+		for x := 0; x < cv.w; x++ {
+			if r := cv.cells[y*cv.w+x].r; strings.ContainsRune("─┌┐└┘├┤┬┴┼", r) {
+				t.Errorf("edge turns on the break line at (%d,%d): %c", x, y, r)
+			}
+		}
+	}
+	if !strings.Contains(plain(cv), "昼休み") {
+		t.Error("label missing")
+	}
+}

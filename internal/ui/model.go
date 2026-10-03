@@ -4,11 +4,13 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -27,6 +29,8 @@ const (
 	modeMove
 	modeConnect
 	modeVisual
+	modeMoveBreak
+	modeEdit
 )
 
 const maxUndo = 200
@@ -69,6 +73,21 @@ type Model struct {
 
 	routes   []route
 	routeKey string
+	stats    map[string]nodeStats // how much each node has written, for the meters
+
+	// preview floats the cursor node's strategy and thread beside it (K).
+	// previewText is read once per node, not on every frame.
+	preview       bool
+	previewID     string
+	previewText   []pline
+	previewScroll int
+
+	// The preview turns into an editor with i (strategy) or a (new entry).
+	edit       textarea.Model
+	editKind   editKind
+	editOrig   string
+	editWarned bool // Esc was pressed once on unsaved changes
+	editRows   int  // the preview's text height when editing began
 
 	// stamp is board.json as this wq last read or wrote it; stale is set
 	// once another wq has written it since.
@@ -99,7 +118,11 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	m.toASCII()
 	m.asciiAgain = false
 	m.cursorTo(firstOpen(b))
+	// Open on that node as the second row, with the row before it above
+	// for context. ensureVisible clamps this once the size is known.
+	m.scroll = newLayout(b, m.width).rowY[max(m.row-1, 0)]
 	m.stamp, _ = board.CurrentStamp(dir)
+	m.stats = readAllStats(dir, b)
 	return m
 }
 
@@ -181,6 +204,7 @@ func (m *Model) reload() {
 	}
 	m.b = b
 	m.stamp, _ = board.CurrentStamp(m.dir)
+	m.stats = readAllStats(m.dir, b)
 	m.stale = false
 	m.undo, m.redo = nil, nil
 	m.clampCursor()
@@ -197,6 +221,7 @@ var readOnlyKeys = map[string]bool{
 	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
 	"ctrl+d": true, "ctrl+u": true, "ctrl+e": true, "ctrl+y": true,
 	"z": true, "t": true, // scrolling (zz / zt / zb)
+	"K": true, // preview
 }
 
 // selected is the node under the cursor, if any.
@@ -270,10 +295,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.strategy != "" {
 			m.pullHeader(msg.id, msg.strategy)
 		}
+		m.previewID = "" // vim may have changed what it shows
+		if msg.id != "" {
+			m.stats[msg.id] = readStats(m.dir, msg.id)
+		}
 		m.toASCII()
 	case tea.KeyMsg:
 		m.msg = ""
-		if m.mode != modeInput {
+		if m.mode != modeInput && m.mode != modeEdit {
 			msg = halfwidth(msg)
 		}
 		if m.mode == modeNormal || m.mode == modeVisual {
@@ -299,14 +328,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keyConnect(msg)
 		case modeVisual:
 			m.keyVisual(msg)
+		case modeMoveBreak:
+			cmd = m.keyMoveBreak(msg)
+		case modeEdit:
+			cmd = m.keyEdit(msg)
 		}
 	default:
-		if m.mode == modeInput {
+		switch m.mode {
+		case modeInput:
 			m.input, cmd = m.input.Update(msg)
+		case modeEdit:
+			m.edit, cmd = m.edit.Update(msg)
 		}
 	}
 	m.ensureVisible()
 	m.refreshRoutes()
+	m.refreshPreview()
+	if m.mode == modeEdit {
+		m.sizeEditor()
+	}
 	if m.asciiAgain {
 		m.asciiAgain = false
 		again := tea.Tick(asciiAgainDelay, func(time.Time) tea.Msg { return asciiAgainMsg{} })
@@ -345,11 +385,18 @@ func openInBrowser(url string) error {
 	if !strings.Contains(url, "://") {
 		url = "https://" + url
 	}
-	opener := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		opener = "open"
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", url).Start()
+	case "windows":
+		// Not cmd /c start: cmd would read & in the url as a command separator.
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
 	}
-	return exec.Command(opener, url).Start()
+	if os.Getenv("WSL_DISTRO_NAME") != "" {
+		// Under WSL, hand it to the Windows browser through interop.
+		return exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", url).Start()
+	}
+	return exec.Command("xdg-open", url).Start()
 }
 
 // pullHeader adopts the title and url edited in strategy.md's header as
@@ -405,7 +452,10 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		m.pendingG = false
 		switch key {
 		case "g":
+			// The earliest open node, where work resumes; the top-left
+			// cell once everything is done.
 			m.row, m.col = 0, 0
+			m.cursorTo(firstOpen(m.b))
 		case "x":
 			m.openNodeURL()
 		}
@@ -424,7 +474,30 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	n := m.selected()
+	if m.preview {
+		switch key {
+		case "K", "esc":
+			m.preview = false
+			return nil
+		case "i":
+			return m.startEdit(editStrategy)
+		case "a":
+			return m.startEdit(editEntry)
+		case "ctrl+d", "ctrl+u":
+			if p, ok := m.previewBox(); ok {
+				step := max((p.h-2)/2, 1)
+				if key == "ctrl+u" {
+					step = -step
+				}
+				m.previewScroll = max(0, min(m.previewScroll+step, p.maxScroll()))
+			}
+			return nil
+		}
+	}
 	switch key {
+	case "K":
+		m.preview = true
+		m.previewID = "" // read it fresh
 	case "q", "ctrl+c":
 		return tea.Quit
 	case "w":
@@ -484,6 +557,15 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		}
 		m.inputBreak = true
 		return m.startInput("break> ", "")
+	case "M":
+		// Move the session break under the cursor's row to another gap.
+		if _, ok := m.b.BreakAfter(m.row); !ok {
+			m.msg = "no session break under this row"
+			return nil
+		}
+		m.moveOrig = m.b.Clone()
+		m.moveCur = [2]int{m.row, m.col}
+		m.mode = modeMoveBreak
 	case "z":
 		m.pendingZ = true
 		m.msg = "z…"
@@ -568,12 +650,15 @@ func (m *Model) insertRow(below bool) {
 	if below {
 		row++
 	}
-	if row > m.b.MaxRow() {
+	_, brk := m.b.BreakAfter(m.row)
+	if row > m.b.MaxRow() && !(below && brk) {
 		return // the buffer rows below the last node are already empty
 	}
 	m.checkpoint()
-	m.b.InsertRow(row)
-	if !below {
+	if below {
+		m.b.OpenRowBelow(m.row) // a break under the cursor's row moves down too
+	} else {
+		m.b.InsertRow(row)
 		m.row++
 	}
 	m.save()
@@ -650,9 +735,10 @@ func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
 			m.mode = modeNormal
 			m.inputBreak = false
 			m.toASCII()
-			if k.String() == "enter" {
+			label := strings.TrimSpace(m.input.Value())
+			if br, ok := m.b.BreakAfter(m.row); k.String() == "enter" && (!ok || br.Label != label) {
 				m.checkpoint()
-				m.b.SetBreak(m.row, strings.TrimSpace(m.input.Value()))
+				m.b.SetBreak(m.row, label)
 				m.save()
 			}
 			return nil
@@ -757,6 +843,42 @@ func (m *Model) keyMove(k tea.KeyMsg) {
 		m.b = m.moveOrig
 		m.row, m.col = m.moveCur[0], m.moveCur[1]
 	}
+}
+
+// keyMoveBreak slides the break under the cursor's row from gap to gap;
+// the cursor rides along on the row above it.
+func (m *Model) keyMoveBreak(k tea.KeyMsg) tea.Cmd {
+	switch key := k.String(); key {
+	case "j", "down", "k", "up":
+		step := 1
+		if key == "k" || key == "up" {
+			step = -1
+		}
+		to, ok := m.b.MoveBreak(m.row, step, m.lastRow())
+		if !ok {
+			m.msg = "can't move there"
+			return nil
+		}
+		m.row = to
+	case "enter", "M", "i":
+		m.mode = modeNormal
+		if m.row != m.moveCur[0] {
+			m.undo = append(m.undo, m.moveOrig)
+			m.redo = nil
+			m.save()
+		}
+		if key == "i" {
+			// Edit the label where the break now sits.
+			br, _ := m.b.BreakAfter(m.row)
+			m.inputBreak = true
+			return m.startInput("break> ", br.Label)
+		}
+	case "esc", "ctrl+c":
+		m.mode = modeNormal
+		m.b = m.moveOrig
+		m.row, m.col = m.moveCur[0], m.moveCur[1]
+	}
+	return nil
 }
 
 // visualIDs lists the nodes inside the visual selection.
@@ -918,11 +1040,13 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · - session break · u/^r undo/redo · q quit",
-	modeInput:   "⏎ ok · esc cancel",
-	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
-	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
-	modeVisual:  "hjkl extend · = organize · m move together · d delete · v block / V rows · esc cancel",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · K preview · x delete · dd/D delete row · [␣/]␣ add row · - session break · M move / relabel break · u/^r undo/redo · q quit",
+	modeInput:     "⏎ ok · esc cancel",
+	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
+	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
+	modeEdit:      "^s save · esc cancel · ⏎ new line",
+	modeMoveBreak: "jk move the session break · i edit label · ⏎ place · esc cancel",
+	modeVisual:    "hjkl extend · = organize · m move together · d delete · v block / V rows · esc cancel",
 }
 
 func (m Model) View() string {
@@ -937,7 +1061,7 @@ func (m Model) View() string {
 		header += "  " + msgStyle.Render("⟳ changed in another wq — R to reload")
 	}
 	switch m.mode {
-	case modeMove:
+	case modeMove, modeMoveBreak:
 		header += "  " + modeStyle.Background(lipgloss.Color("81")).Render(" MOVE ")
 	case modeConnect:
 		header += "  " + modeStyle.Background(lipgloss.Color("220")).Render(" CONNECT ")
@@ -958,7 +1082,11 @@ func (m Model) View() string {
 	case m.msg != "":
 		footer = msgStyle.Render(m.msg)
 	default:
-		footer = dimStyle.Render(runewidth.Truncate(help[m.mode], max(m.width-1, 1), "…"))
+		h := help[m.mode]
+		if m.preview && m.mode == modeNormal {
+			h = "PREVIEW  hjkl follow the cursor · ^d/^u scroll · i edit strategy · a new entry · ⏎ open in vim · K/esc close"
+		}
+		footer = dimStyle.Render(runewidth.Truncate(h, max(m.width-1, 1), "…"))
 	}
 	return header + "\n" + strings.Join(body, "\n") + "\n" + footer
 }
@@ -967,7 +1095,7 @@ func (m Model) viewBoard() []string {
 	body := make([]string, m.bodyHeight())
 	l := newLayout(m.b, m.width)
 	m.refreshRoutes() // no-op unless View runs before the first Update
-	v := view{cursorRow: m.row, cursorCol: m.col, cursorSt: stBorderSel}
+	v := view{cursorRow: m.row, cursorCol: m.col, cursorSt: stBorderSel, stats: m.stats}
 	if n := m.selected(); n != nil {
 		v.lit = n.ID
 	}
@@ -979,14 +1107,53 @@ func (m Model) viewBoard() []string {
 		v.marked = setOf(m.moveIDs)
 	case modeVisual:
 		v.marked = setOf(m.visualIDs())
+	case modeMoveBreak:
+		v.movingBreak = true
 	}
 	cv := renderBoard(m.b, l, m.routes, v)
+	screen := newCanvas(cv.w, len(body))
 	for i := range body {
 		if y := m.scroll + i; y < cv.h {
-			body[i] = cv.line(y)
+			copy(screen.cells[i*cv.w:(i+1)*cv.w], cv.cells[y*cv.w:(y+1)*cv.w])
 		}
 	}
+	if m.mode == modeEdit {
+		return m.drawEditor(screen)
+	}
+	if p, ok := m.previewBox(); ok {
+		p.draw(screen, m.selected().Title, m.previewScroll)
+	}
+	for i := range body {
+		body[i] = screen.line(i)
+	}
 	return body
+}
+
+// refreshPreview rereads the preview when the cursor lands on another
+// node, starting it from the top.
+func (m *Model) refreshPreview() {
+	n := m.selected()
+	if !m.preview || n == nil {
+		m.previewID = ""
+		return
+	}
+	if n.ID != m.previewID {
+		m.previewID = n.ID
+		st := readStats(m.dir, n.ID)
+		m.stats[n.ID] = st
+		head := pline{fmt.Sprintf("strategy %d字 · thread %d件", st.chars, st.entries), stPreviewDim}
+		m.previewText = append([]pline{head, {"", stPlain}}, previewLines(m.dir, *n)...)
+		m.previewScroll = 0
+	}
+}
+
+// previewBox places the preview beside the cursor's card, if it is shown.
+func (m *Model) previewBox() (previewBox, bool) {
+	if !m.preview || m.mode != modeNormal || m.previewID == "" || m.selected() == nil {
+		return previewBox{}, false
+	}
+	l := newLayout(m.b, m.width)
+	return placePreview(l.width, m.bodyHeight(), m.previewText, l.colX(m.col), l.cardW, l.rowY[m.row]-m.scroll)
 }
 
 func setOf(ids []string) map[string]bool {

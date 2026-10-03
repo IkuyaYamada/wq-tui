@@ -13,6 +13,28 @@ mise install        # Go toolchain (see mise.toml)
 go build -o wq . && ./wq   # mise.toml sets CGO_ENABLED=0
 ```
 
+### Windows
+
+Run it in WSL (Ubuntu or similar), from Windows Terminal:
+
+```sh
+sudo apt install -y git vim curl
+curl https://mise.run | sh          # then follow its hint to activate mise
+git clone https://github.com/IkuyaYamada/wq-tui.git && cd wq-tui
+mise trust && mise install           # apt's Go is too old for go.mod
+go build -o wq . && ./wq
+```
+
+Keep the data in the Linux home (`~/wq`), not under `/mnt/c`: it is much
+faster and the atomic save of board.json behaves as on macOS. `gx` opens the
+link in the Windows browser. Switching the input method to ASCII on the board
+is macOS only, so turn the Japanese IME off yourself before using board keys
+(full-width ｈｊｋｌ are still accepted).
+
+A native build also works (`winget install GoLang.Go Git.Git vim.vim`, then
+`go build -o wq.exe .` in PowerShell), but is untested; an exe built on the
+machine itself does not trigger the SmartScreen warning a downloaded one does.
+
 Data lives in `~/wq` (override with `WQ_DIR`):
 
 ```
@@ -32,7 +54,7 @@ Plain files, so the directory can be a git repo of its own.
 | `Ctrl+d` / `Ctrl+u` | Scroll half a screen down / up, moving the cursor with it |
 | `Ctrl+e` / `Ctrl+y` | Scroll one row down / up; the cursor stays unless it would leave the screen |
 | `zz` / `zt` / `zb` | Put the cursor's row at the middle / top / bottom of the screen |
-| `gg` / `G` | Top / last row with nodes |
+| `gg` / `G` | The topmost node not yet done (leftmost first; the top-left cell when all are done) / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
 | `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
@@ -42,10 +64,12 @@ Plain files, so the directory can be a git repo of its own.
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
 | `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), logs `Completed: <comment>` to the thread and shows the comment in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away (`Reopened`) and drops the comment |
 | `Enter` | Open the node in vim (strategy, thread index, entry) |
+| `K` | Preview the node beside its card: strategy, then the thread oldest first, read-only. It follows the cursor; `Ctrl+d` / `Ctrl+u` scroll it, `K` / `Esc` close it. For quick fixes without vim, `i` edits the strategy body in place and `a` writes a new thread entry: `Enter` is a new line, `Ctrl+s` saves, `Esc` cancels (asking once if anything changed). Older entries are edited in vim |
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
 | `[` `Space` / `]` `Space` | Open an empty row above / below the cursor's row (rows below move down; the cursor stays on its node) |
 | `-` | Draw a session break under the cursor's row, with an optional label ("今日はここまで"); `-` on a row that has one removes it |
+| `M` | Pick up the session break under the cursor's row: `j` / `k` move it to another gap (hopping over taken ones), `i` edits its label, `Enter` places it, `Esc` puts it back |
 | `R` | Reload board.json after another wq changed it |
 | `u` / `Ctrl+r` | Undo / redo |
 | `q` | Quit |
@@ -57,8 +81,34 @@ New nodes ask for a title right away; `Esc` on that prompt discards the node.
 A session break is a dotted line in the gap under a row — a stopping point
 between phases ("break here", "done for today"). It lives in board.json as
 `breaks`, never moves nodes or constrains edges, and stays in its gap when
-rows are opened or deleted. The label is placed where no edge crosses the
-line.
+rows are opened or deleted, and `M` moves it to another gap or relabels it.
+A row opened next to a row stays on that row's side of a break: `o` and
+`] Space` push a break under the row down along with the rows below, `O` and
+`[ Space` leave a break over the row where it is, and `o` / `O` never drop the
+new node into a free cell across a break.
+The break gets a line of its own below the edge lane, so edges only cross
+it straight down and never run along it; the label is placed where no edge
+crosses.
+
+## Maturity meters
+
+Two small bars on the left end of a card's bottom border show how much has
+been written on it, read when wq starts, on `R` and when vim closes:
+
+```
+╰▄▆──────────────╯   strategy ▄ , thread ▆
+```
+
+| Bar | Strategy (non-space characters, header excluded) | Thread (entries) |
+| --- | --- | --- |
+| none | 0 | 0 |
+| `▂` | 1–99 | 1 |
+| `▄` | 100–399 | 2–4 |
+| `▆` | 400–999 | 5–9 |
+| `█` | 1000+ | 10+ |
+
+The Completed / Reopened lines wq logs itself do not count. `K` gives the
+exact numbers at the top of the preview.
 
 ## Organizing
 
@@ -101,7 +151,9 @@ written back unchanged, so an older wq never strips what a newer one added.
 `Enter` on a node opens it straight in vim as two panes, cursor in the strategy on the
 left, the thread on the right. The thread pane shows the entry index; `Enter`
 opens an entry in that same pane and `Esc` (normal mode) saves it and goes
-back to the index.
+back to the index. This is the one place `Esc` keeps what you typed: on the
+board's prompts (`title>`, `done>`, `break>`) it cancels. The status lines
+say which.
 
 ```
  strategy.md            │  10/01 14:03  クエリ流した

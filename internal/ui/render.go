@@ -35,10 +35,12 @@ const (
 )
 
 // layout maps grid cells to canvas coordinates. Rows are separated by
-// fixed-height lanes for edges.
+// fixed-height lanes for edges; a gap with a session break gets one more
+// line below its lane, for the break alone.
 type layout struct {
 	cardW  int
 	rowY   []int
+	breakY map[int]bool // lines holding a session break
 	width  int
 	height int
 }
@@ -52,6 +54,13 @@ func newLayout(b *board.Board, termW int) layout {
 	for r := 0; r < rows; r++ {
 		l.rowY = append(l.rowY, y)
 		y += cardH + laneH
+		if _, ok := b.BreakAfter(r); ok {
+			if l.breakY == nil {
+				l.breakY = map[int]bool{}
+			}
+			l.breakY[y] = true
+			y++
+		}
 	}
 	l.height = y
 	return l
@@ -82,26 +91,34 @@ const (
 	stTitleDoneSel
 	stDoneNote
 	stBreak
+	stPreviewBorder
+	stPreviewDim
+	stPreviewWhen
+	stMeter
 	stEdge
 	stEdgeHL
 	stDot
 )
 
 var styles = map[style]lipgloss.Style{
-	stBorder:       lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
-	stBorderSel:    lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true),
-	stBorderDone:   lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
-	stBorderTarget: lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true),
-	stBorderMove:   lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true),
-	stTitle:        lipgloss.NewStyle(),
-	stTitleSel:     lipgloss.NewStyle().Bold(true),
-	stTitleDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Strikethrough(true),
-	stTitleDoneSel: lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Strikethrough(true),
-	stDoneNote:     lipgloss.NewStyle().Foreground(lipgloss.Color("108")).Italic(true),
-	stBreak:        lipgloss.NewStyle().Foreground(lipgloss.Color("179")),
-	stEdge:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-	stEdgeHL:       lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
-	stDot:          lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
+	stBorder:        lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+	stBorderSel:     lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true),
+	stBorderDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("238")),
+	stBorderTarget:  lipgloss.NewStyle().Foreground(lipgloss.Color("220")).Bold(true),
+	stBorderMove:    lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true),
+	stTitle:         lipgloss.NewStyle(),
+	stTitleSel:      lipgloss.NewStyle().Bold(true),
+	stTitleDone:     lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Strikethrough(true),
+	stTitleDoneSel:  lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Strikethrough(true),
+	stDoneNote:      lipgloss.NewStyle().Foreground(lipgloss.Color("108")).Italic(true),
+	stBreak:         lipgloss.NewStyle().Foreground(lipgloss.Color("179")),
+	stPreviewBorder: lipgloss.NewStyle().Foreground(lipgloss.Color("39")),
+	stPreviewDim:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+	stPreviewWhen:   lipgloss.NewStyle().Foreground(lipgloss.Color("108")).Bold(true),
+	stMeter:         lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
+	stEdge:          lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+	stEdgeHL:        lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
+	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 }
 
 type cell struct {
@@ -142,6 +159,17 @@ func (c *canvas) text(x, y int, s string, st style) {
 }
 
 func (c *canvas) line(y int) string {
+	return strings.TrimRight(c.span(y, 0, c.w), " ")
+}
+
+// spliced is line y with cells x0..x1-1 replaced by mid, an already
+// styled string exactly x1-x0 cells wide.
+func (c *canvas) spliced(y, x0, x1 int, mid string) string {
+	return c.span(y, 0, x0) + mid + strings.TrimRight(c.span(y, x1, c.w), " ")
+}
+
+// span renders cells x0..x1-1 of line y with their styles.
+func (c *canvas) span(y, x0, x1 int) string {
 	var sb, run strings.Builder
 	cur := stPlain
 	flush := func() {
@@ -155,7 +183,7 @@ func (c *canvas) line(y int) string {
 		}
 		run.Reset()
 	}
-	for x := 0; x < c.w; x++ {
+	for x := x0; x < x1; x++ {
 		cl := c.cells[y*c.w+x]
 		if cl.cont {
 			continue
@@ -167,7 +195,7 @@ func (c *canvas) line(y int) string {
 		run.WriteRune(cl.r)
 	}
 	flush()
-	return strings.TrimRight(sb.String(), " ")
+	return sb.String()
 }
 
 var (
@@ -209,13 +237,20 @@ func titleRows(title string, w int) []string {
 	return append(rows, runewidth.Truncate(rest, w, "…"))
 }
 
-func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool) {
+func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool, st nodeStats) {
 	f := frameNormal
 	if bold {
 		f = frameBold
 	}
 	drawFrame(cv, l, n.Row, n.Col, f, border)
 	x, y, w := l.colX(n.Col), l.rowY[n.Row], l.cardW
+	// How much is written: strategy, then thread, as bars on the bottom
+	// border's left end (edge ports sit further in).
+	for i, r := range st.meters() {
+		if r != 0 {
+			cv.set(x+1+i, y+cardH-1, r, stMeter)
+		}
+	}
 	if n.URL != "" {
 		cv.set(x+w-3, y, '↗', border) // has a link: gx opens it
 	}
@@ -238,16 +273,21 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	}
 }
 
-// drawBreaks draws each session break as a dotted line across the gap under
-// its row. Edges are drawn later and win where they cross it.
-func drawBreaks(cv *canvas, l layout, breaks []board.Break) {
+// drawBreaks draws each session break as a dotted line on its own line under
+// its row's lane. Edges only cross it straight down; they are drawn later
+// and win where they do.
+func drawBreaks(cv *canvas, l layout, breaks []board.Break, v view) {
 	for _, br := range breaks {
 		if br.After < 0 || br.After >= len(l.rowY) {
 			continue
 		}
-		y := l.rowY[br.After] + cardH
+		st := stBreak
+		if v.movingBreak && br.After == v.cursorRow {
+			st = stBorderMove
+		}
+		y := l.rowY[br.After] + cardH + laneH
 		for x := 0; x < cv.w; x++ {
-			cv.set(x, y, '┄', stBreak)
+			cv.set(x, y, '┄', st)
 		}
 	}
 }
@@ -259,7 +299,7 @@ func drawBreakLabels(cv *canvas, l layout, breaks []board.Break, bits []uint8) {
 		if br.Label == "" || br.After < 0 || br.After >= len(l.rowY) {
 			continue
 		}
-		y := l.rowY[br.After] + cardH
+		y := l.rowY[br.After] + cardH + laneH
 		label := " " + runewidth.Truncate(br.Label, max(cv.w-8, 1), "…") + " "
 		w := runewidth.StringWidth(label)
 		for x := 4; x+w <= cv.w; x++ {
@@ -323,12 +363,14 @@ type view struct {
 	anchor               string
 	lit                  string
 	marked               map[string]bool // multi-selection (visual / group move)
+	movingBreak          bool            // the break under cursorRow is being moved
+	stats                map[string]nodeStats
 }
 
 // renderBoard draws every card, the cursor and the routed edges.
 func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	cv := newCanvas(l.width, l.height)
-	drawBreaks(cv, l, b.Breaks)
+	drawBreaks(cv, l, b.Breaks, v)
 	// A faint dot marks every cell so empty rows still read as a grid.
 	for r := range l.rowY {
 		for c := 0; c < board.Cols; c++ {
@@ -356,7 +398,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 				title = stTitleDoneSel
 			}
 		}
-		drawCard(cv, l, n, border, title, bold)
+		drawCard(cv, l, n, border, title, bold, v.stats[n.ID])
 	}
 	if !onCursor && v.cursorRow >= 0 && v.cursorRow < len(l.rowY) {
 		drawFrame(cv, l, v.cursorRow, v.cursorCol, frameDashed, v.cursorSt)
