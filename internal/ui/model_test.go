@@ -628,3 +628,41 @@ func pressKey(m Model, k tea.KeyMsg) Model {
 	n, _ := m.Update(k)
 	return n.(Model)
 }
+
+func TestDashTogglesSessionBreak(t *testing.T) {
+	f := &fakeIME{current: "Japanese"}
+	m := New(t.TempDir(), &board.Board{}, WithIME(f))
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = n.(Model)
+	m = press(t, m, "a", "設計", "<enter>", "o", "実装", "<enter>", "k")
+
+	m = press(t, m, "-")
+	if m.mode != modeInput || f.current != "Japanese" || m.input.Prompt != "break> " {
+		t.Fatalf("mode %v ime %s prompt %q", m.mode, f.current, m.input.Prompt)
+	}
+	m = press(t, m, "今日はここまで", "<enter>")
+	if br, ok := m.b.BreakAfter(0); !ok || br.Label != "今日はここまで" {
+		t.Fatalf("break %+v %v", br, ok)
+	}
+	view := m.View()
+	if !strings.Contains(view, "今日はここまで") || !strings.Contains(view, "┄") {
+		t.Errorf("break not drawn:\n%s", view)
+	}
+	if got := titles(m.b)["実装"]; got != [2]int{1, 0} {
+		t.Errorf("a break must not move nodes: %v", got)
+	}
+
+	// - again removes it; Esc on the prompt adds nothing.
+	m = press(t, m, "-")
+	if _, ok := m.b.BreakAfter(0); ok {
+		t.Error("second - should remove the break")
+	}
+	m = press(t, m, "-", "<esc>")
+	if len(m.b.Breaks) != 0 {
+		t.Errorf("esc added a break: %+v", m.b.Breaks)
+	}
+	m = press(t, m, "u")
+	if _, ok := m.b.BreakAfter(0); !ok {
+		t.Error("undo should bring the break back")
+	}
+}

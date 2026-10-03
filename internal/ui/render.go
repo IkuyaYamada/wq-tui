@@ -81,6 +81,7 @@ const (
 	stTitleDone
 	stTitleDoneSel
 	stDoneNote
+	stBreak
 	stEdge
 	stEdgeHL
 	stDot
@@ -97,6 +98,7 @@ var styles = map[style]lipgloss.Style{
 	stTitleDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Strikethrough(true),
 	stTitleDoneSel: lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Strikethrough(true),
 	stDoneNote:     lipgloss.NewStyle().Foreground(lipgloss.Color("108")).Italic(true),
+	stBreak:        lipgloss.NewStyle().Foreground(lipgloss.Color("179")),
 	stEdge:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 	stEdgeHL:       lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
 	stDot:          lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
@@ -236,6 +238,47 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	}
 }
 
+// drawBreaks draws each session break as a dotted line across the gap under
+// its row. Edges are drawn later and win where they cross it.
+func drawBreaks(cv *canvas, l layout, breaks []board.Break) {
+	for _, br := range breaks {
+		if br.After < 0 || br.After >= len(l.rowY) {
+			continue
+		}
+		y := l.rowY[br.After] + cardH
+		for x := 0; x < cv.w; x++ {
+			cv.set(x, y, '┄', stBreak)
+		}
+	}
+}
+
+// drawBreakLabels writes each break's label into the leftmost stretch of its
+// gap that no edge crosses (bits marks edge cells), so lines never cut it.
+func drawBreakLabels(cv *canvas, l layout, breaks []board.Break, bits []uint8) {
+	for _, br := range breaks {
+		if br.Label == "" || br.After < 0 || br.After >= len(l.rowY) {
+			continue
+		}
+		y := l.rowY[br.After] + cardH
+		label := " " + runewidth.Truncate(br.Label, max(cv.w-8, 1), "…") + " "
+		w := runewidth.StringWidth(label)
+		for x := 4; x+w <= cv.w; x++ {
+			free := true
+			for i := x; i < x+w; i++ {
+				if bits[y*cv.w+i] != 0 {
+					free = false
+					x = i // resume the search past this edge
+					break
+				}
+			}
+			if free {
+				cv.text(x, y, label, stBreak)
+				break
+			}
+		}
+	}
+}
+
 // edgeRune turns a set of connection bits into a box-drawing character.
 func edgeRune(bits uint8) rune {
 	switch bits {
@@ -285,6 +328,7 @@ type view struct {
 // renderBoard draws every card, the cursor and the routed edges.
 func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	cv := newCanvas(l.width, l.height)
+	drawBreaks(cv, l, b.Breaks)
 	// A faint dot marks every cell so empty rows still read as a grid.
 	for r := range l.rowY {
 		for c := 0; c < board.Cols; c++ {
@@ -354,6 +398,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		cv.set(rt.srcPort.x, rt.srcPort.y, '┬', st)
 		cv.set(rt.dstPort.x, rt.dstPort.y, '▼', st)
 	}
+	drawBreakLabels(cv, l, b.Breaks, bits)
 	for k, v := range bits {
 		if v == 0 {
 			continue

@@ -40,14 +40,15 @@ type Model struct {
 	// The cursor is a cell, not a node, so it can rest on empty cells.
 	row, col int
 
-	mode      mode
-	input     textinput.Model
-	inputNew  bool   // the node being titled was just created; Esc discards it
-	inputDone bool   // the prompt asks for a completion comment, not a title
-	prevCur   [2]int // cursor to restore when a new node is discarded
-	moveIDs   []string
-	moveOrig  *board.Board
-	moveCur   [2]int
+	mode       mode
+	input      textinput.Model
+	inputNew   bool   // the node being titled was just created; Esc discards it
+	inputDone  bool   // the prompt asks for a completion comment, not a title
+	inputBreak bool   // the prompt asks for a session break label
+	prevCur    [2]int // cursor to restore when a new node is discarded
+	moveIDs    []string
+	moveOrig   *board.Board
+	moveCur    [2]int
 
 	// Visual mode selects the rectangle between visAnchor and the cursor,
 	// or whole rows when visLine is set.
@@ -471,6 +472,17 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		return openNode(m.dir, *n)
 	case "D":
 		m.deleteRow()
+	case "-":
+		// Toggle the session break under the cursor's row; a new one asks
+		// for an optional label.
+		if _, ok := m.b.BreakAfter(m.row); ok {
+			m.checkpoint()
+			m.b.RemoveBreak(m.row)
+			m.save()
+			return nil
+		}
+		m.inputBreak = true
+		return m.startInput("break> ", "")
 	case "z":
 		m.pendingZ = true
 		m.msg = "z…"
@@ -610,6 +622,24 @@ func (m *Model) startInput(prompt, value string) tea.Cmd {
 }
 
 func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
+	if m.inputBreak {
+		switch k.String() {
+		case "enter", "esc", "ctrl+c":
+			m.input.Blur()
+			m.mode = modeNormal
+			m.inputBreak = false
+			m.toASCII()
+			if k.String() == "enter" {
+				m.checkpoint()
+				m.b.SetBreak(m.row, strings.TrimSpace(m.input.Value()))
+				m.save()
+			}
+			return nil
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(k)
+		return cmd
+	}
 	if m.inputDone {
 		switch k.String() {
 		case "enter", "esc", "ctrl+c":
@@ -867,7 +897,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · ^d/^u half page · zz/zt/zb align · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · ^d/^u half page · zz/zt/zb align · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · - session break · u/^r undo/redo · q quit",
 	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",

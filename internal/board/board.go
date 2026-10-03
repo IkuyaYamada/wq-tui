@@ -32,8 +32,9 @@ type Edge struct {
 }
 
 type Board struct {
-	Nodes []Node `json:"nodes"`
-	Edges []Edge `json:"edges"`
+	Nodes  []Node  `json:"nodes"`
+	Edges  []Edge  `json:"edges"`
+	Breaks []Break `json:"breaks,omitempty"`
 
 	extra map[string]json.RawMessage // fields from a newer wq, kept as-is
 }
@@ -67,9 +68,10 @@ var (
 
 func (b *Board) Clone() *Board {
 	return &Board{
-		Nodes: append([]Node(nil), b.Nodes...),
-		Edges: append([]Edge(nil), b.Edges...),
-		extra: b.extra,
+		Nodes:  append([]Node(nil), b.Nodes...),
+		Edges:  append([]Edge(nil), b.Edges...),
+		Breaks: append([]Break(nil), b.Breaks...),
+		extra:  b.extra,
 	}
 }
 
@@ -256,6 +258,7 @@ func (b *Board) InsertRow(row int) {
 			b.Nodes[i].Row++
 		}
 	}
+	b.insertBreakRow(row)
 }
 
 // DeleteRow removes a row: its nodes are deleted (bridging simple chains as
@@ -276,6 +279,7 @@ func (b *Board) DeleteRow(row int) {
 			b.Nodes[i].Row--
 		}
 	}
+	b.deleteBreakRow(row)
 }
 
 // Delete removes id and its edges. A node with exactly one incoming and one
@@ -335,6 +339,7 @@ func (b *Board) ToggleEdge(from, to string) (added bool, err error) {
 				b.Nodes[i].Row++
 			}
 		}
+		b.insertBreakRow(row + 1)
 	}
 	b.Edges = append(b.Edges, Edge{From: from, To: to})
 	return true, nil

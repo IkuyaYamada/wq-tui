@@ -44,11 +44,20 @@ Plain files, so the directory can be a git repo of its own.
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
 | `[` `Space` / `]` `Space` | Open an empty row above / below the cursor's row (rows below move down; the cursor stays on its node) |
+| `-` | Draw a session break under the cursor's row, with an optional label ("今日はここまで"); `-` on a row that has one removes it |
 | `R` | Reload board.json after another wq changed it |
 | `u` / `Ctrl+r` | Undo / redo |
 | `q` | Quit |
 
 New nodes ask for a title right away; `Esc` on that prompt discards the node.
+
+## Session breaks
+
+A session break is a dotted line in the gap under a row — a stopping point
+between phases ("break here", "done for today"). It lives in board.json as
+`breaks`, never moves nodes or constrains edges, and stays in its gap when
+rows are opened or deleted. The label is placed where no edge crosses the
+line.
 
 ## Organizing
 
