@@ -753,6 +753,10 @@ func (m *Model) toggleDone(comment string) {
 	n.Done = !n.Done
 	event := "Reopened"
 	n.DoneAt = nil
+	n.DoneNote = ""
+	if n.Done {
+		n.DoneNote = comment
+	}
 	if n.Done {
 		now := time.Now()
 		n.DoneAt = &now

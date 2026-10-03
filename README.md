@@ -37,7 +37,7 @@ Plain files, so the directory can be a git repo of its own.
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it, `=` organizes it |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
-| `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels) and logs `Completed: <comment>` to the thread. On a done node it reopens right away (`Reopened`) |
+| `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), logs `Completed: <comment>` to the thread and shows the comment in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away (`Reopened`) and drops the comment |
 | `Enter` | Open the node in vim (strategy, thread index, entry) |
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |

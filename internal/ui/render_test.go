@@ -96,3 +96,24 @@ func TestSelectedDoneNodeStillLooksDone(t *testing.T) {
 		t.Errorf("cursor border should still show, style %v", c.st)
 	}
 }
+
+func TestDoneNoteOnSecondLine(t *testing.T) {
+	b := &board.Board{Nodes: []board.Node{
+		{ID: "a", Title: "既存テーブルの依存関係を洗う", Row: 0, Col: 0, Done: true, DoneNote: "スキーマ確定"},
+		{ID: "b", Title: "未着手", Row: 1, Col: 0},
+	}}
+	l := newLayout(b, 120)
+	before := l.rowY[1]
+	cv := renderBoard(b, l, nil, view{cursorRow: -1})
+	out := plain(cv)
+	if !strings.Contains(out, "スキーマ確定") {
+		t.Errorf("note missing:\n%s", out)
+	}
+	x, y := l.colX(0)+2, l.rowY[0]+2
+	if c := cv.cells[y*cv.w+x]; c.st != stDoneNote {
+		t.Errorf("note style %v", c.st)
+	}
+	if newLayout(b, 120).rowY[1] != before {
+		t.Error("the note must not change the layout")
+	}
+}

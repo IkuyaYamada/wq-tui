@@ -80,6 +80,7 @@ const (
 	stTitleSel
 	stTitleDone
 	stTitleDoneSel
+	stDoneNote
 	stEdge
 	stEdgeHL
 	stDot
@@ -95,6 +96,7 @@ var styles = map[style]lipgloss.Style{
 	stTitleSel:     lipgloss.NewStyle().Bold(true),
 	stTitleDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Strikethrough(true),
 	stTitleDoneSel: lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Strikethrough(true),
+	stDoneNote:     lipgloss.NewStyle().Foreground(lipgloss.Color("108")).Italic(true),
 	stEdge:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 	stEdgeHL:       lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
 	stDot:          lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
@@ -221,6 +223,13 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	}
 	if label == "" {
 		label = "…"
+	}
+	// A completion comment takes the second line, so the card (and the
+	// grid) keeps its size; the title gives up its second line for it.
+	if n.Done && n.DoneNote != "" {
+		cv.text(x+2, y+1, runewidth.Truncate(label, w-4, "…"), title)
+		cv.text(x+2, y+2, runewidth.Truncate(n.DoneNote, w-4, "…"), stDoneNote)
+		return
 	}
 	for i, line := range titleRows(label, w-4) {
 		cv.text(x+2, y+1+i, line, title)

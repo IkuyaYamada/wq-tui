@@ -20,6 +20,7 @@ type Node struct {
 	Done      bool       `json:"done"`
 	CreatedAt time.Time  `json:"created_at"`
 	DoneAt    *time.Time `json:"done_at,omitempty"`
+	DoneNote  string     `json:"done_note,omitempty"` // comment given when completing
 }
 
 type Edge struct {

@@ -539,3 +539,15 @@ func TestSaveRefusesWhenBoardChangedDuringInput(t *testing.T) {
 		t.Errorf("stale %v msg %q", m.stale, m.msg)
 	}
 }
+
+func TestDoneNoteSetAndCleared(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "設計", "<enter>", "<space>", "スキーマ確定", "<enter>")
+	if got := m.selected().DoneNote; got != "スキーマ確定" {
+		t.Fatalf("note %q", got)
+	}
+	m = press(t, m, "<space>")
+	if got := m.selected().DoneNote; got != "" {
+		t.Errorf("reopen should clear the note, got %q", got)
+	}
+}
