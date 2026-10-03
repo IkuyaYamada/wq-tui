@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -70,7 +71,7 @@ func TestRhythmicAddConnectComplete(t *testing.T) {
 	}
 
 	// Connect 設計 → 雑務: select 設計, c, move to 雑務, Enter.
-	m = press(t, m, "g", "c", "j", "j", "l", "<enter>")
+	m = press(t, m, "g", "g", "c", "j", "j", "l", "<enter>")
 	if !hasEdge(m.b, "設計", "雑務") {
 		t.Fatalf("connect failed: %s / edges %v", m.msg, m.b.Edges)
 	}
@@ -153,7 +154,7 @@ func hasEdge(b *board.Board, from, to string) bool {
 func TestVisualSelectMovesNodesTogether(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{})
 	// 設計 → 実装 in column 0, 雑務 at (0,1).
-	m = press(t, m, "a", "設計", "<enter>", "o", "実装", "<enter>", "g", "l", "a", "雑務", "<enter>")
+	m = press(t, m, "a", "設計", "<enter>", "o", "実装", "<enter>", "g", "g", "l", "a", "雑務", "<enter>")
 
 	// Block-select column 0 only (rows 0-1), then slide it right: 雑務 is
 	// in the way on row 0, so the pair hops to column 2.
@@ -167,7 +168,7 @@ func TestVisualSelectMovesNodesTogether(t *testing.T) {
 	}
 
 	// V selects whole rows: push both rows down one.
-	m = press(t, m, "g", "V", "j", "m", "j", "<enter>")
+	m = press(t, m, "g", "g", "V", "j", "m", "j", "<enter>")
 	got = titles(m.b)
 	if got["設計"] != [2]int{1, 2} || got["雑務"] != [2]int{1, 1} || got["実装"] != [2]int{2, 2} {
 		t.Fatalf("after row move: %v", got)
@@ -180,7 +181,7 @@ func TestVisualSelectMovesNodesTogether(t *testing.T) {
 	}
 
 	// Visual d deletes every selected node.
-	m = press(t, m, "g", "V", "d")
+	m = press(t, m, "g", "g", "V", "d")
 	if len(m.b.Nodes) != 1 {
 		t.Errorf("visual delete left %d nodes", len(m.b.Nodes))
 	}
@@ -391,11 +392,11 @@ func TestVisualEqualsOrganizes(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{})
 	// A at (0,0); B dropped far away at (3,4), then connected A → B.
 	m = press(t, m, "a", "A", "<enter>", "j", "j", "j", "l", "l", "l", "l", "a", "B", "<enter>")
-	m = press(t, m, "g", "c", "j", "j", "j", "l", "l", "l", "l", "<enter>")
+	m = press(t, m, "g", "g", "c", "j", "j", "j", "l", "l", "l", "l", "<enter>")
 	if !hasEdge(m.b, "A", "B") {
 		t.Fatalf("setup: %v", m.b.Edges)
 	}
-	m = press(t, m, "g", "V", "j", "j", "j", "=")
+	m = press(t, m, "g", "g", "V", "j", "j", "j", "=")
 	if got := titles(m.b)["B"]; got != [2]int{1, 0} {
 		t.Errorf("B at %v after =", got)
 	}
@@ -427,5 +428,53 @@ func TestStartsOnFirstOpenNode(t *testing.T) {
 	m = New(t.TempDir(), b)
 	if m.row != 0 || m.col != 0 {
 		t.Errorf("all done: cursor %d,%d", m.row, m.col)
+	}
+}
+
+func TestGXOpensNodeURL(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	var opened []string
+	m.openURL = func(u string) error { opened = append(opened, u); return nil }
+	m = press(t, m, "a", "設計", "<enter>", "g", "x")
+	if len(opened) != 0 || !strings.Contains(m.msg, "no url") {
+		t.Errorf("without url: opened %v msg %q", opened, m.msg)
+	}
+	m.b.Nodes[0].URL = "https://example.com/doc"
+	m = press(t, m, "g", "x")
+	if len(opened) != 1 || opened[0] != "https://example.com/doc" {
+		t.Errorf("opened %v", opened)
+	}
+	// gg still goes to the top-left; a lone g then another key does nothing.
+	m = press(t, m, "j", "l", "g", "g")
+	if m.row != 0 || m.col != 0 {
+		t.Errorf("gg: %d,%d", m.row, m.col)
+	}
+	m = press(t, m, "g", "j")
+	if m.row != 0 {
+		t.Errorf("g then j should be swallowed: row %d", m.row)
+	}
+}
+
+func TestURLEditedInVimIsAdopted(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	m = press(t, m, "a", "設計", "<enter>")
+	n := *m.selected()
+	strategy, err := strategyPath(dir, n)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(strategy); !strings.Contains(string(got), "\nurl:\n") {
+		t.Errorf("blank url: field missing:\n%s", got)
+	}
+	os.WriteFile(strategy, []byte("---\ntitle: 設計\nurl: https://example.com\n---\n\n"), 0o644)
+	next, _ := m.Update(editorDoneMsg{id: n.ID, strategy: strategy})
+	m = next.(Model)
+	if got := m.selected().URL; got != "https://example.com" {
+		t.Fatalf("url %q", got)
+	}
+	m = press(t, m, "u")
+	if got := m.selected().URL; got != "" {
+		t.Errorf("undo should clear url, got %q", got)
 	}
 }

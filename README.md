@@ -29,7 +29,8 @@ Plain files, so the directory can be a git repo of its own.
 | --- | --- |
 | `hjkl` / arrows | Move the cursor one cell (empty cells included) |
 | `w` / `b` | Jump to the next / previous node |
-| `g` / `G` | Top / last row with nodes |
+| `gg` / `G` | Top / last row with nodes |
+| `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
 | `o` / `O` | Insert a node in the free cell directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). Nothing else moves; if that cell is taken, off the board, or an edge would turn sideways, it reports an error instead |
 | `i` | Rename (or edit `title:` in vim) |
@@ -91,18 +92,21 @@ Entries saved empty are removed on the way out. The layout comes from
 `internal/ui/wq.vim`, embedded in the binary and sourced with `vim -S`, so it
 only applies to these sessions. `WQ_VIM` overrides the vim binary.
 
-`strategy.md` starts with a small header that carries the node's title:
+`strategy.md` starts with a small header that carries the node's title and
+a link, blank until you fill it in:
 
 ```markdown
 ---
 title: 設計
+url: https://example.com/design-doc
 ---
 
 (strategy)
 ```
 
-Edit the `title:` line and the node is renamed when you leave vim (undoable
-with `u`; a blank title is ignored). `board.json` stays the
+Edit `title:` or `url:` and the node picks them up when you leave vim, as one
+undoable change (a blank title is ignored; a blank url clears the link).
+`gx` on the board then opens the url (`https://` is added to a bare host). `board.json` stays the
 source of truth: the header is rewritten with the current title every time
 the node opens. Other `key: value` lines you add to the header are kept.
 

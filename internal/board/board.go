@@ -14,6 +14,7 @@ const Cols = 6
 type Node struct {
 	ID        string     `json:"id"`
 	Title     string     `json:"title"`
+	URL       string     `json:"url,omitempty"`
 	Row       int        `json:"row"`
 	Col       int        `json:"col"`
 	Done      bool       `json:"done"`

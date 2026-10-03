@@ -4,6 +4,8 @@ package ui
 
 import (
 	"fmt"
+	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -53,6 +55,9 @@ type Model struct {
 	visLine   bool
 
 	pendingD bool // first d of dd was pressed
+	pendingG bool // first g of gg / gx was pressed
+
+	openURL  func(string) error // opens a node's url; swapped out in tests
 	connFrom string
 
 	width, height int
@@ -79,7 +84,7 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	ti := textinput.New()
 	ti.Prompt = "title> "
 	ti.CharLimit = 200
-	m := Model{dir: dir, b: b, input: ti, width: 120, height: 40, ime: ime.Noop{}}
+	m := Model{dir: dir, b: b, input: ti, width: 120, height: 40, ime: ime.Noop{}, openURL: openInBrowser}
 	for _, o := range opts {
 		o(&m)
 	}
@@ -206,7 +211,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.msg = "vim: " + msg.err.Error()
 		}
 		if msg.strategy != "" {
-			m.pullTitle(msg.id, msg.strategy)
+			m.pullHeader(msg.id, msg.strategy)
 		}
 		m.toASCII()
 	case tea.KeyMsg:
@@ -250,16 +255,51 @@ func (m *Model) refreshRoutes() {
 	}
 }
 
-// pullTitle adopts a title edited in strategy.md's header as one undoable
-// rename. An emptied title is ignored.
-func (m *Model) pullTitle(id, strategy string) {
-	title, ok := readStrategyTitle(strategy)
+// openNodeURL opens the url of the node under the cursor in the browser.
+func (m *Model) openNodeURL() {
+	n := m.selected()
+	switch {
+	case n == nil:
+	case n.URL == "":
+		m.msg = "no url — add one to url: in the strategy header"
+	default:
+		if err := m.openURL(n.URL); err != nil {
+			m.msg = "open: " + err.Error()
+		} else {
+			m.msg = "opened " + n.URL
+		}
+	}
+}
+
+// openInBrowser hands url to the system opener; a bare host gets https://.
+func openInBrowser(url string) error {
+	if !strings.Contains(url, "://") {
+		url = "https://" + url
+	}
+	opener := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		opener = "open"
+	}
+	return exec.Command(opener, url).Start()
+}
+
+// pullHeader adopts the title and url edited in strategy.md's header as
+// one undoable change. A blank title is ignored; a blank url clears it.
+func (m *Model) pullHeader(id, strategy string) {
+	title, url, ok := readStrategyHeader(strategy)
 	n := m.b.Node(id)
-	if !ok || n == nil || n.Title == title {
+	if !ok || n == nil {
+		return
+	}
+	if title == "" {
+		title = n.Title
+	}
+	if n.Title == title && n.URL == url {
 		return
 	}
 	m.checkpoint()
-	m.b.Node(id).Title = title
+	n = m.b.Node(id)
+	n.Title, n.URL = title, url
 	m.save()
 }
 
@@ -279,6 +319,16 @@ func dirOf(k string) (board.Dir, bool) {
 
 func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
+	if m.pendingG {
+		m.pendingG = false
+		switch key {
+		case "g":
+			m.row, m.col = 0, 0
+		case "x":
+			m.openNodeURL()
+		}
+		return nil
+	}
 	if m.pendingD {
 		// dd deletes the row; any other key just cancels the pending d.
 		m.pendingD = false
@@ -300,7 +350,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	case "b":
 		m.jump(-1)
 	case "g":
-		m.row, m.col = 0, 0
+		m.pendingG = true
+		m.msg = "g…"
 	case "G":
 		m.row, m.col = max(m.b.MaxRow(), 0), 0
 	case "o", "O", "a", "n":
@@ -676,7 +727,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · w/b next/prev node · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · w/b next/prev node · gg top · gx open url · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · u/^r undo/redo · q quit",
 	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",

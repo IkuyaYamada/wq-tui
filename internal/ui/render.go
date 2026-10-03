@@ -212,6 +212,9 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	}
 	drawFrame(cv, l, n.Row, n.Col, f, border)
 	x, y, w := l.colX(n.Col), l.rowY[n.Row], l.cardW
+	if n.URL != "" {
+		cv.set(x+w-3, y, '↗', border) // has a link: gx opens it
+	}
 	label := n.Title
 	if n.Done {
 		label = "✓ " + label

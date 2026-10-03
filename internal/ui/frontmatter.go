@@ -44,7 +44,10 @@ func (fm frontmatter) get(key string) (string, bool) {
 }
 
 func (fm *frontmatter) set(key, value string) {
-	line := key + ": " + value
+	line := key + ":" // no trailing space for an empty value
+	if value != "" {
+		line += " " + value
+	}
 	for i, l := range fm.lines {
 		if strings.HasPrefix(l, key+":") {
 			fm.lines[i] = line
@@ -58,10 +61,11 @@ func (fm frontmatter) render(body string) string {
 	return "---\n" + strings.Join(fm.lines, "\n") + "\n---\n" + body
 }
 
-// syncStrategyTitle writes title into strategy.md's header, creating the
-// file or the header as needed. A leading "# <title>" heading from older
+// syncStrategyHeader writes title and url into strategy.md's header,
+// creating the file or the header as needed; url: is always present so
+// there is a blank to fill in. A leading "# <title>" heading from older
 // files is folded into the header.
-func syncStrategyTitle(path, title string) error {
+func syncStrategyHeader(path, title, url string) error {
 	cur, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
@@ -72,6 +76,7 @@ func syncStrategyTitle(path, title string) error {
 		body = "\n" + strings.TrimLeft(legacy, "\n")
 	}
 	fm.set("title", title)
+	fm.set("url", url)
 	out := fm.render(body)
 	if out == string(cur) {
 		return nil
@@ -79,16 +84,18 @@ func syncStrategyTitle(path, title string) error {
 	return os.WriteFile(path, []byte(out), 0o644)
 }
 
-// readStrategyTitle returns the non-empty title from strategy.md's header.
-func readStrategyTitle(path string) (string, bool) {
+// readStrategyHeader returns the title and url from strategy.md's header;
+// ok is false when there is no header.
+func readStrategyHeader(path string) (title, url string, ok bool) {
 	cur, err := os.ReadFile(path)
 	if err != nil {
-		return "", false
+		return "", "", false
 	}
 	fm, _, ok := splitFrontmatter(string(cur))
 	if !ok {
-		return "", false
+		return "", "", false
 	}
-	title, ok := fm.get("title")
-	return title, ok && title != ""
+	title, _ = fm.get("title")
+	url, _ = fm.get("url")
+	return title, url, true
 }

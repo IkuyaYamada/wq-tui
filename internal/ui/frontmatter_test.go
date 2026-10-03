@@ -11,24 +11,24 @@ import (
 func TestSyncStrategyTitle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "strategy.md")
 	cases := []struct{ name, before, title, want string }{
-		{"new file", "", "設計", "---\ntitle: 設計\n---\n\n"},
-		{"legacy heading", "# 設計\n\nまず調べる\n", "設計", "---\ntitle: 設計\n---\n\nまず調べる\n"},
-		{"no heading", "メモだけ\n", "設計", "---\ntitle: 設計\n---\n\nメモだけ\n"},
-		{"rename keeps body and extra keys", "---\ntitle: 旧\nowner: me\n---\n\n本文\n", "新", "---\ntitle: 新\nowner: me\n---\n\n本文\n"},
+		{"new file", "", "設計", "---\ntitle: 設計\nurl:\n---\n\n"},
+		{"legacy heading", "# 設計\n\nまず調べる\n", "設計", "---\ntitle: 設計\nurl:\n---\n\nまず調べる\n"},
+		{"no heading", "メモだけ\n", "設計", "---\ntitle: 設計\nurl:\n---\n\nメモだけ\n"},
+		{"rename keeps body and extra keys", "---\ntitle: 旧\nowner: me\n---\n\n本文\n", "新", "---\ntitle: 新\nowner: me\nurl:\n---\n\n本文\n"},
 	}
 	for _, c := range cases {
 		os.Remove(path)
 		if c.before != "" {
 			os.WriteFile(path, []byte(c.before), 0o644)
 		}
-		if err := syncStrategyTitle(path, c.title); err != nil {
+		if err := syncStrategyHeader(path, c.title, ""); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := os.ReadFile(path)
 		if string(got) != c.want {
 			t.Errorf("%s:\ngot  %q\nwant %q", c.name, got, c.want)
 		}
-		if title, ok := readStrategyTitle(path); !ok || title != c.title {
+		if title, _, ok := readStrategyHeader(path); !ok || title != c.title {
 			t.Errorf("%s: read back %q %v", c.name, title, ok)
 		}
 	}
