@@ -61,13 +61,8 @@ func (d Dir) delta() (dr, dc int) {
 }
 
 var (
-	ErrNotFound   = errors.New("node not found")
-	ErrTopRow     = errors.New("no row above the top row")
-	ErrAboveTaken = errors.New("the cell above is taken")
-	ErrPredAbove  = errors.New("an incoming node sits on the row above; its edge would go sideways")
-	ErrBelowTaken = errors.New("the cell below is taken")
-	ErrSuccBelow  = errors.New("an outgoing node sits on the row below; its edge would go sideways")
-	ErrSelf       = errors.New("cannot connect a node to itself")
+	ErrNotFound = errors.New("node not found")
+	ErrSelf     = errors.New("cannot connect a node to itself")
 )
 
 func (b *Board) Clone() *Board {
@@ -177,17 +172,17 @@ func (b *Board) Add(n Node, row, col int) {
 	b.Nodes = append(b.Nodes, n)
 }
 
-// InsertAfter places n in the free cell directly below id and hands id's
-// outgoing edges over to n: A → B becomes A → n → B. Nothing else moves; if
-// that cell cannot take n, it returns an error instead of making room.
+// InsertAfter places n directly below id and hands id's outgoing edges over
+// to n: A → B becomes A → n → B. A free cell is used as is; otherwise an
+// empty row is opened below id first, pushing the rows under it down.
 func (b *Board) InsertAfter(id string, n Node) error {
 	a := b.Node(id)
 	if a == nil {
 		return ErrNotFound
 	}
 	row, col := a.Row, a.Col
-	if err := b.roomBelow(id, row, col); err != nil {
-		return err
+	if !b.roomBelow(id, row, col) {
+		b.InsertRow(row + 1)
 	}
 	n.Row, n.Col = row+1, col
 	for i := range b.Edges {
@@ -200,19 +195,21 @@ func (b *Board) InsertAfter(id string, n Node) error {
 	return nil
 }
 
-// InsertBefore places n in the free cell directly above id and hands id's
-// incoming edges over to n: A → B becomes A → n → B. Nothing else moves; if
-// that cell cannot take n, it returns an error instead of making room.
+// InsertBefore places n directly above id and hands id's incoming edges over
+// to n: A → B becomes A → n → B. A free cell is used as is; otherwise an
+// empty row is opened at id's row, pushing id and the rows under it down.
 func (b *Board) InsertBefore(id string, n Node) error {
 	t := b.Node(id)
 	if t == nil {
 		return ErrNotFound
 	}
 	row, col := t.Row, t.Col
-	if err := b.roomAbove(id, row, col); err != nil {
-		return err
+	if b.roomAbove(id, row, col) {
+		n.Row, n.Col = row-1, col
+	} else {
+		b.InsertRow(row)
+		n.Row, n.Col = row, col
 	}
-	n.Row, n.Col = row-1, col
 	for i := range b.Edges {
 		if b.Edges[i].To == id {
 			b.Edges[i].To = n.ID
@@ -223,31 +220,31 @@ func (b *Board) InsertBefore(id string, n Node) error {
 	return nil
 }
 
-func (b *Board) roomBelow(id string, row, col int) error {
+// roomBelow reports whether the cell under id is free and every successor
+// sits lower still, so a node can go there without moving anything.
+func (b *Board) roomBelow(id string, row, col int) bool {
 	if b.At(row+1, col) != nil {
-		return ErrBelowTaken
+		return false
 	}
 	for _, s := range b.Succs(id) {
 		if b.Node(s).Row <= row+1 {
-			return ErrSuccBelow
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
-func (b *Board) roomAbove(id string, row, col int) error {
-	switch {
-	case row == 0:
-		return ErrTopRow
-	case b.At(row-1, col) != nil:
-		return ErrAboveTaken
+// roomAbove is roomBelow's counterpart for the cell over id.
+func (b *Board) roomAbove(id string, row, col int) bool {
+	if row == 0 || b.At(row-1, col) != nil {
+		return false
 	}
 	for _, p := range b.Preds(id) {
 		if b.Node(p).Row >= row-1 {
-			return ErrPredAbove
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
 // InsertRow opens an empty row at row by pushing it and every row below

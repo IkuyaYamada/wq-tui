@@ -36,22 +36,20 @@ func TestInsertAfterTakesOverOutgoingEdges(t *testing.T) {
 	}
 }
 
-func TestInsertAfterRefusesWithoutRoom(t *testing.T) {
-	cases := []struct {
-		b    *Board
-		want error
-	}{
-		{&Board{Nodes: []Node{node("A", 0, 0), node("X", 1, 0)}}, ErrBelowTaken},
-		{&Board{Nodes: []Node{node("A", 0, 0), node("S", 1, 3)}, Edges: []Edge{{"A", "S"}}}, ErrSuccBelow},
+func TestInsertAfterOpensARowWhenNeeded(t *testing.T) {
+	// The cell below is taken: rows from there down move one down.
+	b := &Board{Nodes: []Node{node("A", 0, 0), node("X", 1, 0), node("Y", 1, 3)}}
+	if err := b.InsertAfter("A", node("N", 0, 0)); err != nil {
+		t.Fatal(err)
 	}
-	for _, c := range cases {
-		before := len(c.b.Nodes)
-		if err := c.b.InsertAfter("A", node("N", 0, 0)); err != c.want {
-			t.Errorf("err = %v, want %v", err, c.want)
-		}
-		if len(c.b.Nodes) != before {
-			t.Errorf("board changed on error")
-		}
+	if pos(t, b, "N") != [2]int{1, 0} || pos(t, b, "X") != [2]int{2, 0} || pos(t, b, "Y") != [2]int{2, 3} {
+		t.Errorf("N %v X %v Y %v", pos(t, b, "N"), pos(t, b, "X"), pos(t, b, "Y"))
+	}
+	// A successor right below in another column would be level with N.
+	b = &Board{Nodes: []Node{node("A", 0, 0), node("S", 1, 3)}, Edges: []Edge{{"A", "S"}}}
+	b.InsertAfter("A", node("N", 0, 0))
+	if pos(t, b, "N") != [2]int{1, 0} || pos(t, b, "S") != [2]int{2, 3} || !b.HasEdge("N", "S") {
+		t.Errorf("N %v S %v edges %v", pos(t, b, "N"), pos(t, b, "S"), b.Edges)
 	}
 }
 
@@ -205,22 +203,25 @@ func TestInsertBeforeUsesFreeCellAbove(t *testing.T) {
 		t.Errorf("edges %v", b.Edges)
 	}
 
-	// No room above: refuse and leave the board untouched.
+	// No room above: open a row at B's row, pushing B and below down.
 	cases := []struct {
+		name string
 		b    *Board
-		want error
 	}{
-		{&Board{Nodes: []Node{node("B", 0, 0)}}, ErrTopRow},
-		{&Board{Nodes: []Node{node("X", 1, 0), node("B", 2, 0)}}, ErrAboveTaken},
-		{&Board{Nodes: []Node{node("P", 1, 3), node("B", 2, 0)}, Edges: []Edge{{"P", "B"}}}, ErrPredAbove},
+		{"top row", &Board{Nodes: []Node{node("B", 0, 0)}}},
+		{"cell taken", &Board{Nodes: []Node{node("X", 1, 0), node("B", 2, 0)}}},
+		{"pred on that row", &Board{Nodes: []Node{node("P", 1, 3), node("B", 2, 0)}, Edges: []Edge{{"P", "B"}}}},
 	}
 	for _, c := range cases {
-		before := len(c.b.Nodes)
-		if err := c.b.InsertBefore("B", node("N", 0, 0)); err != c.want {
-			t.Errorf("err = %v, want %v", err, c.want)
+		row := c.b.Node("B").Row
+		if err := c.b.InsertBefore("B", node("N", 0, 0)); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
 		}
-		if len(c.b.Nodes) != before {
-			t.Errorf("board changed on error")
+		if pos(t, c.b, "N") != [2]int{row, 0} || pos(t, c.b, "B") != [2]int{row + 1, 0} {
+			t.Errorf("%s: N %v B %v", c.name, pos(t, c.b, "N"), pos(t, c.b, "B"))
+		}
+		if !c.b.HasEdge("N", "B") {
+			t.Errorf("%s: edges %v", c.name, c.b.Edges)
 		}
 	}
 }

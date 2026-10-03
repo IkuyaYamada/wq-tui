@@ -32,7 +32,7 @@ Plain files, so the directory can be a git repo of its own.
 | `gg` / `G` | Top / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
-| `o` / `O` | Insert a node in the free cell directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). Nothing else moves; if that cell is taken, off the board, or an edge would turn sideways, it reports an error instead |
+| `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it, `=` organizes it |

@@ -291,25 +291,6 @@ func TestDeleteRowWithDDAndD(t *testing.T) {
 	}
 }
 
-func TestOReportsWhenThereIsNoRoomAbove(t *testing.T) {
-	m := New(t.TempDir(), &board.Board{})
-	m = press(t, m, "a", "一番上", "<enter>", "O")
-	if m.mode != modeNormal || len(m.b.Nodes) != 1 || m.msg == "" {
-		t.Errorf("mode %v nodes %d msg %q", m.mode, len(m.b.Nodes), m.msg)
-	}
-	if len(m.undo) != 1 {
-		t.Errorf("refused O should not leave an undo step: %d", len(m.undo))
-	}
-}
-
-func TestOReportsWhenTheCellBelowIsTaken(t *testing.T) {
-	m := New(t.TempDir(), &board.Board{})
-	m = press(t, m, "a", "上", "<enter>", "o", "下", "<enter>", "k", "o")
-	if m.mode != modeNormal || len(m.b.Nodes) != 2 || m.msg == "" {
-		t.Errorf("mode %v nodes %d msg %q", m.mode, len(m.b.Nodes), m.msg)
-	}
-}
-
 func TestCompletingAsksForAComment(t *testing.T) {
 	dir := t.TempDir()
 	f := &fakeIME{current: "Japanese"}
@@ -576,5 +557,29 @@ func TestBracketSpaceAddsEmptyRows(t *testing.T) {
 	m = press(t, m, "u", "u")
 	if got := titles(m.b)["下"]; got != [2]int{1, 0} {
 		t.Errorf("undo: %v", got)
+	}
+}
+
+func TestOAndShiftOMakeRoomWhenBlocked(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "上", "<enter>", "o", "下", "<enter>")
+	// o on 上: the cell below holds 下, so 下 moves down a row.
+	m = press(t, m, "k", "o", "中", "<enter>")
+	got := titles(m.b)
+	if got["上"] != [2]int{0, 0} || got["中"] != [2]int{1, 0} || got["下"] != [2]int{2, 0} {
+		t.Fatalf("o: %v", got)
+	}
+	if !hasEdge(m.b, "上", "中") || !hasEdge(m.b, "中", "下") {
+		t.Errorf("o edges: %v", m.b.Edges)
+	}
+	// O on 上 (top row): everything moves down to make room.
+	m = press(t, m, "k", "O", "最初", "<enter>")
+	got = titles(m.b)
+	if got["最初"] != [2]int{0, 0} || got["上"] != [2]int{1, 0} || got["下"] != [2]int{3, 0} {
+		t.Errorf("O: %v", got)
+	}
+	m = press(t, m, "u")
+	if got := titles(m.b); got["上"] != [2]int{0, 0} {
+		t.Errorf("undo O: %v", got)
 	}
 }
