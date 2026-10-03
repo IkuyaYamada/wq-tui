@@ -3,6 +3,7 @@
 package board
 
 import (
+	"encoding/json"
 	"errors"
 	"sort"
 	"time"
@@ -21,6 +22,8 @@ type Node struct {
 	CreatedAt time.Time  `json:"created_at"`
 	DoneAt    *time.Time `json:"done_at,omitempty"`
 	DoneNote  string     `json:"done_note,omitempty"` // comment given when completing
+
+	extra map[string]json.RawMessage // fields from a newer wq, kept as-is
 }
 
 type Edge struct {
@@ -31,6 +34,8 @@ type Edge struct {
 type Board struct {
 	Nodes []Node `json:"nodes"`
 	Edges []Edge `json:"edges"`
+
+	extra map[string]json.RawMessage // fields from a newer wq, kept as-is
 }
 
 type Dir int
@@ -69,6 +74,7 @@ func (b *Board) Clone() *Board {
 	return &Board{
 		Nodes: append([]Node(nil), b.Nodes...),
 		Edges: append([]Edge(nil), b.Edges...),
+		extra: b.extra,
 	}
 }
 

@@ -70,6 +70,11 @@ can never roll back the other wq's work. Thread entries and strategy files
 are separate per node and are not affected; vim's own swap-file warning
 covers the same file being open twice.
 
+wq is meant to grow while in use, so an older build is often still open next
+to a newer one. Fields in board.json that a build does not know are kept and
+written back unchanged, so an older wq never strips what a newer one added.
+(Builds from before this change do drop them; restart those once.)
+
 ## Rules
 
 - Six columns, rows grow downward, one node per cell.
