@@ -861,3 +861,188 @@ func TestStartsWithFirstOpenNodeOnTheSecondRow(t *testing.T) {
 		t.Errorf("scroll %d, want 0", m.scroll)
 	}
 }
+
+func TestFrameNodesInVisualMode(t *testing.T) {
+	n := func(id string, row, col int) board.Node { return board.Node{ID: id, Title: id, Row: row, Col: col} }
+	b := &board.Board{
+		Nodes: []board.Node{n("X", 0, 2), n("A", 1, 0), n("B", 1, 1), n("C", 2, 0), n("Y", 4, 3)},
+		Edges: []board.Edge{{From: "X", To: "B"}, {From: "C", To: "Y"}, {From: "A", To: "C"}},
+	}
+	m := New(t.TempDir(), b)
+	n2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = n2.(Model)
+	m.row, m.col = 1, 0
+	m = press(t, m, "v", "j", "l", "g", "設計", "<enter>")
+	if len(m.b.Groups) != 1 || m.b.Groups[0].Title != "設計" || len(m.b.Groups[0].Members) != 3 || m.mode != modeNormal {
+		t.Fatalf("groups %+v mode %v", m.b.Groups, m.mode)
+	}
+	view := m.View()
+	t.Log("\n" + view)
+	if strings.Count(view, "╭") < 1+len(m.b.Nodes)-1 || !strings.Contains(view, "╰") {
+		t.Errorf("frame not drawn")
+	}
+	if len(m.routes) != 3 {
+		t.Fatalf("routes %d", len(m.routes))
+	}
+	for _, r := range m.routes {
+		if len(r.path) == 0 {
+			t.Errorf("%s→%s not routed", r.from, r.to)
+		}
+	}
+
+	// o inside the frame adds a member; the frame grows around it.
+	m.row, m.col = 2, 0
+	m = press(t, m, "o", "D", "<enter>")
+	if m.b.GroupOf(m.selected().ID) != 0 {
+		t.Errorf("o from a member should join its frame: %+v", m.b.Groups)
+	}
+	// u takes nodes out; an empty frame goes away. Undo brings it back.
+	m.row, m.col = 1, 0
+	m = press(t, m, "V", "j", "j", "u")
+	if len(m.b.Groups) != 0 {
+		t.Errorf("groups %+v", m.b.Groups)
+	}
+	m = press(t, m, "u")
+	if len(m.b.Groups) != 1 {
+		t.Errorf("undo: %+v", m.b.Groups)
+	}
+}
+
+func TestFrameAsATarget(t *testing.T) {
+	dir := t.TempDir()
+	n := func(id string, row, col int) board.Node { return board.Node{ID: id, Title: id, Row: row, Col: col} }
+	b := &board.Board{Nodes: []board.Node{n("X", 0, 0), n("A", 1, 0), n("B", 1, 1), n("C", 2, 0)}}
+	m := New(dir, b)
+	n2, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = n2.(Model)
+	m.row, m.col = 1, 0
+	m = press(t, m, "v", "j", "l", "g", "<esc>")
+	if len(m.b.Groups) != 0 {
+		t.Fatalf("esc on the title should give up the frame: %+v", m.b.Groups)
+	}
+	m.row, m.col = 1, 0
+	m = press(t, m, "v", "j", "l", "g", "設計", "<enter>")
+	if len(m.b.Groups) != 1 {
+		t.Fatalf("groups %+v", m.b.Groups)
+	}
+	id := m.b.Groups[0].ID
+
+	// k from the frame's top row selects it; j comes back, k k leaves upward.
+	m.row, m.col = 2, 0
+	m = press(t, m, "k")
+	if m.frameSel != "" || m.row != 1 {
+		t.Fatalf("k inside the frame moves as usual: sel %q row %d", m.frameSel, m.row)
+	}
+	m = press(t, m, "k")
+	if m.frameSel != id {
+		t.Fatalf("k on the top row selects the frame")
+	}
+	view := m.View()
+	t.Log("\n" + view)
+	if !strings.Contains(view, "┏") || !strings.Contains(view, "設計") || !strings.Contains(view, "0/3") || !strings.Contains(view, "FRAME") {
+		t.Errorf("selected frame should be bold with title and progress")
+	}
+	m = press(t, m, "j")
+	if m.frameSel != "" || m.row != 1 {
+		t.Errorf("j: sel %q row %d", m.frameSel, m.row)
+	}
+	m = press(t, m, "k", "k")
+	if m.frameSel != "" || m.row != 0 {
+		t.Errorf("k k: sel %q row %d", m.frameSel, m.row)
+	}
+
+	// Space completes every member; again reopens them.
+	m = press(t, m, "j", "k", "<space>")
+	for _, id := range []string{"A", "B", "C"} {
+		if !m.b.Node(id).Done {
+			t.Errorf("%s not done", id)
+		}
+	}
+	if !strings.Contains(m.View(), "3/3") {
+		t.Error("progress should read 3/3")
+	}
+	m = press(t, m, "<space>")
+	if m.b.Node("A").Done {
+		t.Error("second space should reopen")
+	}
+
+	// i renames, m moves the members together, x drops only the frame.
+	m = press(t, m, "i")
+	m.input.SetValue("実装")
+	m = press(t, m, "<enter>")
+	if g := m.b.Group(id); g == nil || g.Title != "実装" {
+		t.Errorf("rename: %+v", g)
+	}
+	m = press(t, m, "m", "l", "<enter>")
+	if got := titles(m.b); got["A"] != [2]int{1, 1} || got["B"] != [2]int{1, 2} || got["C"] != [2]int{2, 1} {
+		t.Errorf("m should move the members together: %v", got)
+	}
+	m = press(t, m, "x")
+	if len(m.b.Groups) != 0 || len(m.b.Nodes) != 4 {
+		t.Errorf("x: groups %+v nodes %d", m.b.Groups, len(m.b.Nodes))
+	}
+}
+
+func TestSplitNodeIntoFrame(t *testing.T) {
+	dir := t.TempDir()
+	b := &board.Board{
+		Nodes: []board.Node{{ID: "X", Title: "X"}, {ID: "A", Title: "大きい", Row: 1}, {ID: "Y", Title: "Y", Row: 2}},
+		Edges: []board.Edge{{From: "X", To: "A"}, {From: "A", To: "Y"}},
+	}
+	m := New(dir, b)
+	m.row = 1
+	m = press(t, m, "g", "s", "<esc>")
+	if m.b.Node("A") == nil || len(m.b.Groups) != 0 {
+		t.Fatalf("esc should undo the split: %+v", m.b.Groups)
+	}
+	m = press(t, m, "g", "s", "小1", "<enter>")
+	g := m.b.Group("A")
+	child := m.b.At(1, 0)
+	if g == nil || g.Title != "大きい" || child == nil || child.Title != "小1" || g.Members[0] != child.ID {
+		t.Fatalf("frame %+v child %+v", g, child)
+	}
+	if !m.b.HasEdge("X", child.ID) || !m.b.HasEdge(child.ID, "Y") {
+		t.Errorf("edges should move to the child: %+v", m.b.Edges)
+	}
+	// o from the child adds a second member; K on the frame shows its notes.
+	m = press(t, m, "o", "小2", "<enter>")
+	if len(m.b.Group("A").Members) != 2 {
+		t.Errorf("members %+v", m.b.Group("A").Members)
+	}
+	nodeDir := board.NodeDir(dir, "A")
+	os.MkdirAll(nodeDir, 0o755)
+	os.WriteFile(filepath.Join(nodeDir, "strategy.md"), []byte("---\ntitle: 大きい\n---\n\n全体の方針\n"), 0o644)
+	m = press(t, m, "k", "k", "K")
+	if m.frameSel != "A" || !strings.Contains(m.View(), "全体の方針") {
+		t.Errorf("K on the frame should show its own strategy:\n%s", m.View())
+	}
+}
+
+func TestHeaderNamesFrameAndNodeInFull(t *testing.T) {
+	long := "とても長い名前の枠をここに書いておくための見出し"
+	b := &board.Board{Nodes: []board.Node{{ID: "A", Title: "中身"}, {ID: "B", Title: "外", Col: 3}}}
+	b.Frame(board.Group{ID: "F", Title: long}, []string{"A"})
+	m := New(t.TempDir(), b)
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = n.(Model)
+	m.row, m.col = 0, 0
+	header := strings.SplitN(m.View(), "\n", 2)[0]
+	if !strings.Contains(header, long+" › 中身") {
+		t.Errorf("header %q", header)
+	}
+	m = press(t, m, "k")
+	if header := strings.SplitN(m.View(), "\n", 2)[0]; !strings.Contains(header, "▸ "+long+" 0/1") {
+		t.Errorf("frame selected: %q", header)
+	}
+	m = press(t, m, "j", "l", "l", "l")
+	if header := strings.SplitN(m.View(), "\n", 2)[0]; !strings.HasSuffix(strings.TrimSpace(header), "外") || strings.Contains(header, "›") {
+		t.Errorf("outside a frame: %q", header)
+	}
+	// A narrow screen cuts the frame's name before the node's.
+	n, _ = m.Update(tea.WindowSizeMsg{Width: 50, Height: 30})
+	m = n.(Model)
+	m.row, m.col = 0, 0
+	if header := strings.SplitN(m.View(), "\n", 2)[0]; !strings.Contains(header, "… › 中身") {
+		t.Errorf("narrow: %q", header)
+	}
+}

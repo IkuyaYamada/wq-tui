@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -35,14 +36,27 @@ const (
 )
 
 // layout maps grid cells to canvas coordinates. Rows are separated by
-// fixed-height lanes for edges; a gap with a session break gets one more
-// line below its lane, for the break alone.
+// fixed-height lanes for edges. Some gaps get lines of their own: a group
+// frame's bottom right under its last row, a session break below the lane,
+// and a group frame's top right over its first row.
 type layout struct {
-	cardW  int
-	rowY   []int
-	breakY map[int]bool // lines holding a session break
-	width  int
-	height int
+	cardW   int
+	rowY    []int
+	breakAt map[int]int  // row → the line its break is drawn on
+	breakY  map[int]bool // lines holding a session break
+	noH     map[int]bool // lines edges only cross: breaks and frame tops / bottoms
+	frames  []frame
+	width   int
+	height  int
+}
+
+// frame is a group's rectangle on the canvas, drawn in the gaps around its
+// members' cards.
+type frame struct {
+	x0, y0, x1, y1 int
+	id, title      string
+	done, total    int
+	members        map[string]bool
 }
 
 func newLayout(b *board.Board, termW int) layout {
@@ -50,19 +64,57 @@ func newLayout(b *board.Board, termW int) layout {
 	l.cardW = max(l.cardW, 8)
 	l.width = 2*margin + board.Cols*l.cardW + (board.Cols-1)*gap
 	rows := b.MaxRow() + 1 + bufferRows
+	type span struct {
+		r0, c0, r1, c1 int
+		g              board.Group
+	}
+	var spans []span
+	top, bottom := map[int]bool{}, map[int]bool{}
+	for _, g := range b.Groups {
+		if r0, c0, r1, c1, ok := b.Bounds(g); ok {
+			spans = append(spans, span{r0, c0, r1, c1, g})
+			top[r0], bottom[r1] = true, true
+		}
+	}
+	l.breakAt, l.breakY, l.noH = map[int]int{}, map[int]bool{}, map[int]bool{}
 	y := 0
 	for r := 0; r < rows; r++ {
+		if top[r] {
+			l.noH[y] = true
+			y++
+		}
 		l.rowY = append(l.rowY, y)
-		y += cardH + laneH
+		y += cardH
+		if bottom[r] {
+			l.noH[y] = true
+			y++
+		}
+		y += laneH
 		if _, ok := b.BreakAfter(r); ok {
-			if l.breakY == nil {
-				l.breakY = map[int]bool{}
-			}
-			l.breakY[y] = true
+			l.breakAt[r] = y
+			l.breakY[y], l.noH[y] = true, true
 			y++
 		}
 	}
 	l.height = y
+	for _, s := range spans {
+		f := frame{
+			x0: l.colX(s.c0) - 1, y0: l.rowY[s.r0] - 1,
+			x1: l.colX(s.c1) + l.cardW, y1: l.rowY[s.r1] + cardH,
+			id: s.g.ID, title: s.g.Title,
+			members: map[string]bool{},
+		}
+		for _, id := range s.g.Members {
+			if n := b.Node(id); n != nil {
+				f.members[id] = true
+				f.total++
+				if n.Done {
+					f.done++
+				}
+			}
+		}
+		l.frames = append(l.frames, f)
+	}
 	return l
 }
 
@@ -95,6 +147,8 @@ const (
 	stPreviewDim
 	stPreviewWhen
 	stMeter
+	stFrame
+	stFrameLit
 	stEdge
 	stEdgeHL
 	stDot
@@ -116,6 +170,8 @@ var styles = map[style]lipgloss.Style{
 	stPreviewDim:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 	stPreviewWhen:   lipgloss.NewStyle().Foreground(lipgloss.Color("108")).Bold(true),
 	stMeter:         lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
+	stFrame:         lipgloss.NewStyle().Foreground(lipgloss.Color("97")),
+	stFrameLit:      lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true),
 	stEdge:          lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 	stEdgeHL:        lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
@@ -273,6 +329,48 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	}
 }
 
+// drawRect draws a group frame. Edges are drawn later and win where they
+// cross it.
+func drawRect(cv *canvas, f frame, st style, heavy bool) {
+	r := frameNormal
+	if heavy {
+		r = frameBold
+	}
+	for x := f.x0 + 1; x < f.x1; x++ {
+		cv.set(x, f.y0, r[1], st)
+		cv.set(x, f.y1, r[1], st)
+	}
+	for y := f.y0 + 1; y < f.y1; y++ {
+		cv.set(f.x0, y, r[3], st)
+		cv.set(f.x1, y, r[3], st)
+	}
+	cv.set(f.x0, f.y0, r[0], st)
+	cv.set(f.x1, f.y0, r[2], st)
+	cv.set(f.x0, f.y1, r[4], st)
+	cv.set(f.x1, f.y1, r[5], st)
+	title, progress := f.labels()
+	if title != "" {
+		cv.text(f.x0+2, f.y0, title, st)
+	}
+	if progress != "" {
+		cv.text(f.x1-1-runewidth.StringWidth(progress), f.y0, progress, st)
+	}
+}
+
+// labels are the texts on a frame's top line: its title on the left and
+// its progress on the right, each "" when there is no room.
+func (f frame) labels() (title, progress string) {
+	progress = fmt.Sprintf(" %d/%d ", f.done, f.total)
+	pw := runewidth.StringWidth(progress)
+	if f.x1-f.x0 <= pw+3 {
+		progress, pw = "", 0
+	}
+	if room := f.x1 - f.x0 - 3 - pw; f.title != "" && room > 4 {
+		title = " " + runewidth.Truncate(f.title, room-3, "…") + " "
+	}
+	return title, progress
+}
+
 // drawBreaks draws each session break as a dotted line on its own line under
 // its row's lane. Edges only cross it straight down; they are drawn later
 // and win where they do.
@@ -285,7 +383,10 @@ func drawBreaks(cv *canvas, l layout, breaks []board.Break, v view) {
 		if v.movingBreak && br.After == v.cursorRow {
 			st = stBorderMove
 		}
-		y := l.rowY[br.After] + cardH + laneH
+		y, ok := l.breakAt[br.After]
+		if !ok {
+			continue
+		}
 		for x := 0; x < cv.w; x++ {
 			cv.set(x, y, '┄', st)
 		}
@@ -299,7 +400,10 @@ func drawBreakLabels(cv *canvas, l layout, breaks []board.Break, bits []uint8) {
 		if br.Label == "" || br.After < 0 || br.After >= len(l.rowY) {
 			continue
 		}
-		y := l.rowY[br.After] + cardH + laneH
+		y, ok := l.breakAt[br.After]
+		if !ok {
+			continue
+		}
 		label := " " + runewidth.Truncate(br.Label, max(cv.w-8, 1), "…") + " "
 		w := runewidth.StringWidth(label)
 		for x := 4; x+w <= cv.w; x++ {
@@ -364,6 +468,7 @@ type view struct {
 	lit                  string
 	marked               map[string]bool // multi-selection (visual / group move)
 	movingBreak          bool            // the break under cursorRow is being moved
+	frameSel             string          // the selected frame; no card is then the cursor
 	stats                map[string]nodeStats
 }
 
@@ -376,6 +481,14 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		for c := 0; c < board.Cols; c++ {
 			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+1, '·', stDot)
 		}
+	}
+	cur := b.At(v.cursorRow, v.cursorCol)
+	for _, f := range l.frames {
+		st, heavy := stFrame, f.id != "" && f.id == v.frameSel
+		if heavy || (cur != nil && f.members[cur.ID]) {
+			st = stFrameLit
+		}
+		drawRect(cv, f, st, heavy)
 	}
 	onCursor := false
 	for _, n := range b.Nodes {

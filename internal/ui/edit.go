@@ -25,7 +25,7 @@ const (
 // startEdit turns the preview into an editor for the cursor's node, for
 // quick fixes without leaving the board.
 func (m *Model) startEdit(kind editKind) tea.Cmd {
-	n := m.selected()
+	n := m.focus()
 	if n == nil {
 		return nil
 	}
@@ -75,7 +75,7 @@ func strategyBody(dir string, n board.Node) string {
 // was (10 lines at least), taller as the wrapped text grows, never past the
 // screen.
 func (m *Model) editBox() (previewBox, bool) {
-	n := m.selected()
+	n := m.focus()
 	if n == nil {
 		return previewBox{}, false
 	}
@@ -133,7 +133,7 @@ func (m *Model) leaveEdit() {
 }
 
 func (m *Model) saveEdit() {
-	n := m.selected()
+	n := m.focus()
 	text := strings.Trim(m.edit.Value(), "\n")
 	if n == nil || m.edit.Value() == m.editOrig {
 		return
@@ -183,9 +183,9 @@ func (m *Model) drawEditor(screen *canvas) []string {
 		}
 		return out
 	}
-	title := m.selected().Title + " · strategy"
+	title := m.focus().Title + " · strategy"
 	if m.editKind == editEntry {
-		title = m.selected().Title + " · new entry"
+		title = m.focus().Title + " · new entry"
 	}
 	p.text = nil
 	p.draw(screen, title, 0)

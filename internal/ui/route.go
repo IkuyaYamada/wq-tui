@@ -27,6 +27,7 @@ const (
 	costTurn    = 3
 	costOverlap = 12
 	costCross   = 1
+	costSide    = 40
 )
 
 // routeEdges lays out every edge with a turn-penalised shortest path that
@@ -46,6 +47,14 @@ func routeEdges(b *board.Board, l layout) []route {
 
 	src, dst := assignPorts(b, l, idx)
 
+	// Running down along a frame's side would hide it; crossing it is fine.
+	sides := make([]bool, w*h)
+	for _, f := range l.frames {
+		for y := f.y0; y <= f.y1; y++ {
+			sides[y*w+f.x0], sides[y*w+f.x1] = true, true
+		}
+	}
+
 	edges := append([]board.Edge(nil), b.Edges...)
 	sort.SliceStable(edges, func(i, j int) bool {
 		return span(idx, edges[i]) < span(idx, edges[j])
@@ -62,7 +71,7 @@ func routeEdges(b *board.Board, l layout) []route {
 		rt := route{from: e.From, to: e.To, srcPort: src[e], dstPort: dst[e]}
 		start := point{rt.srcPort.x, rt.srcPort.y + 1}
 		end := point{rt.dstPort.x, rt.dstPort.y - 1}
-		rt.path = shortestPath(w, start, end, blocked, usedH, usedV, l.breakY)
+		rt.path = shortestPath(w, start, end, blocked, usedH, usedV, l.noH, sides)
 		for i := 1; i < len(rt.path); i++ {
 			p, q := rt.path[i-1], rt.path[i]
 			if p.y == q.y {
@@ -153,9 +162,10 @@ func (q *pq) Push(x any)        { *q = append(*q, x.(pqItem)) }
 func (q *pq) Pop() any          { old := *q; it := old[len(old)-1]; *q = old[:len(old)-1]; return it }
 
 // shortestPath runs Dijkstra over (cell, last move) states between the
-// start row and the end row. Lines in noH (session breaks) are only crossed
-// straight down, never run along.
-func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map[int]bool) []point {
+// start row and the end row. Lines in noH (session breaks, frame tops and
+// bottoms) are only crossed straight down, never run along; running down a
+// frame side (sides) costs extra.
+func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map[int]bool, sides []bool) []point {
 	if start.y > end.y {
 		return nil
 	}
@@ -201,6 +211,9 @@ func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map
 				c += costTurn
 			}
 			if nd == moveDown {
+				if sides[k] {
+					c += costSide
+				}
 				if usedV[k] {
 					c += costOverlap
 				}
@@ -252,6 +265,9 @@ func routeKey(b *board.Board, width int) string {
 	sb.WriteByte('|')
 	for _, br := range b.Breaks {
 		fmt.Fprintf(&sb, "%d,", br.After)
+	}
+	for _, g := range b.Groups {
+		fmt.Fprintf(&sb, "|%v", g.Members)
 	}
 	return sb.String()
 }

@@ -46,9 +46,11 @@ type Model struct {
 
 	mode       mode
 	input      textinput.Model
-	inputNew   bool   // the node being titled was just created; Esc discards it
-	inputDone  bool   // the prompt asks for a completion comment, not a title
-	inputBreak bool   // the prompt asks for a session break label
+	inputNew   bool // the node being titled was just created; Esc discards it
+	inputDone  bool // the prompt asks for a completion comment, not a title
+	inputBreak bool // the prompt asks for a session break label
+	inputFrame bool // the prompt asks for a frame's title (new when frameIDs is set)
+	frameIDs   []string
 	prevCur    [2]int // cursor to restore when a new node is discarded
 	moveIDs    []string
 	moveOrig   *board.Board
@@ -58,6 +60,10 @@ type Model struct {
 	// or whole rows when visLine is set.
 	visAnchor [2]int
 	visLine   bool
+
+	// frameSel is the frame the cursor has stepped onto (k from its top
+	// row); frame keys then act on it rather than on a node.
+	frameSel string
 
 	pendingD       bool   // first d of dd was pressed
 	pendingG       bool   // first g of gg / gx was pressed
@@ -123,6 +129,7 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	m.scroll = newLayout(b, m.width).rowY[max(m.row-1, 0)]
 	m.stamp, _ = board.CurrentStamp(dir)
 	m.stats = readAllStats(dir, b)
+	b.EnsureGroupIDs(time.Now())
 	return m
 }
 
@@ -205,6 +212,8 @@ func (m *Model) reload() {
 	m.b = b
 	m.stamp, _ = board.CurrentStamp(m.dir)
 	m.stats = readAllStats(m.dir, b)
+	b.EnsureGroupIDs(time.Now())
+	m.frameSel = ""
 	m.stale = false
 	m.undo, m.redo = nil, nil
 	m.clampCursor()
@@ -327,7 +336,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeConnect:
 			m.keyConnect(msg)
 		case modeVisual:
-			m.keyVisual(msg)
+			cmd = m.keyVisual(msg)
 		case modeMoveBreak:
 			cmd = m.keyMoveBreak(msg)
 		case modeEdit:
@@ -403,8 +412,23 @@ func openInBrowser(url string) error {
 // one undoable change. A blank title is ignored; a blank url clears it.
 func (m *Model) pullHeader(id, strategy string) {
 	title, url, ok := readStrategyHeader(strategy)
+	if !ok {
+		return
+	}
+	if g := m.b.Group(id); g != nil {
+		if title == "" {
+			title = g.Title
+		}
+		if g.Title != title || g.URL != url {
+			m.checkpoint()
+			g = m.b.Group(id)
+			g.Title, g.URL = title, url
+			m.save()
+		}
+		return
+	}
 	n := m.b.Node(id)
-	if !ok || n == nil {
+	if n == nil {
 		return
 	}
 	if title == "" {
@@ -458,6 +482,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			m.cursorTo(firstOpen(m.b))
 		case "x":
 			m.openNodeURL()
+		case "s":
+			return m.decompose()
 		}
 		return nil
 	}
@@ -470,7 +496,9 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	if d, ok := dirOf(key); ok {
-		m.moveCursor(d)
+		if !m.frameNav(d) {
+			m.moveCursor(d)
+		}
 		return nil
 	}
 	n := m.selected()
@@ -492,6 +520,11 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 				m.previewScroll = max(0, min(m.previewScroll+step, p.maxScroll()))
 			}
 			return nil
+		}
+	}
+	if g := m.selectedFrame(); g != nil {
+		if cmd, done := m.keyFrame(key, g); done {
+			return cmd
 		}
 	}
 	switch key {
@@ -697,6 +730,12 @@ func (m *Model) startNew(key string) tea.Cmd {
 	m.prevCur = [2]int{m.row, m.col}
 	m.checkpoint()
 	cur := m.selected()
+	group := -1 // the group the new node joins: the cursor node's, or the frame it is in
+	if cur != nil {
+		group = m.b.GroupOf(cur.ID)
+	} else {
+		group = m.b.GroupAt(m.row, m.col)
+	}
 	switch {
 	case cur == nil:
 		m.b.Add(nn, m.row, m.col)
@@ -713,6 +752,9 @@ func (m *Model) startNew(key string) tea.Cmd {
 	default:
 		m.b.Add(nn, cur.Row, cur.Col)
 	}
+	if group >= 0 {
+		m.b.Groups[group].Members = append(m.b.Groups[group].Members, nn.ID)
+	}
 	m.cursorTo(m.b.Node(nn.ID))
 	m.inputNew = true
 	return m.startInput("title> ", "")
@@ -728,6 +770,35 @@ func (m *Model) startInput(prompt, value string) tea.Cmd {
 }
 
 func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
+	if m.inputFrame {
+		switch k.String() {
+		case "enter", "esc", "ctrl+c":
+			m.input.Blur()
+			m.mode = modeNormal
+			m.inputFrame = false
+			m.toASCII()
+			ids := m.frameIDs
+			m.frameIDs = nil
+			if k.String() != "enter" {
+				return nil
+			}
+			title := strings.TrimSpace(m.input.Value())
+			if ids != nil {
+				now := time.Now()
+				m.checkpoint()
+				m.b.Frame(board.Group{ID: board.NewID(now), Title: title, CreatedAt: now}, ids)
+				m.save()
+			} else if g := m.selectedFrame(); g != nil && g.Title != title {
+				m.checkpoint()
+				m.selectedFrame().Title = title
+				m.save()
+			}
+			return nil
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(k)
+		return cmd
+	}
 	if m.inputBreak {
 		switch k.String() {
 		case "enter", "esc", "ctrl+c":
@@ -897,11 +968,11 @@ func (m *Model) visualIDs() []string {
 	return ids
 }
 
-func (m *Model) keyVisual(k tea.KeyMsg) {
+func (m *Model) keyVisual(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
 	if d, ok := dirOf(key); ok {
 		m.moveCursor(d)
-		return
+		return nil
 	}
 	switch key {
 	case "v", "V":
@@ -914,28 +985,44 @@ func (m *Model) keyVisual(k tea.KeyMsg) {
 		ids := m.visualIDs()
 		if len(ids) == 0 {
 			m.msg = "no nodes selected"
-			return
+			return nil
 		}
 		m.startMove(ids)
 	case "=":
 		ids := m.visualIDs()
 		m.mode = modeNormal
 		if len(ids) == 0 {
-			return
+			return nil
 		}
 		m.checkpoint()
 		if err := m.b.Organize(ids); err != nil {
 			m.undo = m.undo[:len(m.undo)-1]
 			m.msg = err.Error()
-			return
+			return nil
 		}
 		m.msg = fmt.Sprintf("organized %d nodes", len(ids))
+		m.save()
+	case "g", "u":
+		ids := m.visualIDs()
+		m.mode = modeNormal
+		if len(ids) == 0 {
+			m.msg = "no nodes selected"
+			return nil
+		}
+		if key == "g" {
+			// Name the frame first; Esc gives up on it.
+			m.frameIDs, m.inputFrame = ids, true
+			return m.startInput("frame> ", "")
+		}
+		m.checkpoint()
+		m.b.Ungroup(ids)
+		m.msg = fmt.Sprintf("took %d nodes out of their frames", len(ids))
 		m.save()
 	case "d", "x":
 		ids := m.visualIDs()
 		m.mode = modeNormal
 		if len(ids) == 0 {
-			return
+			return nil
 		}
 		m.checkpoint()
 		for _, id := range ids {
@@ -945,6 +1032,7 @@ func (m *Model) keyVisual(k tea.KeyMsg) {
 	case "esc", "ctrl+c":
 		m.mode = modeNormal
 	}
+	return nil
 }
 
 func (m *Model) keyConnect(k tea.KeyMsg) {
@@ -1040,13 +1128,13 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · K preview · x delete · dd/D delete row · [␣/]␣ add row · - session break · M move / relabel break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - session break · M move / relabel break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeEdit:      "^s save · esc cancel · ⏎ new line",
 	modeMoveBreak: "jk move the session break · i edit label · ⏎ place · esc cancel",
-	modeVisual:    "hjkl extend · = organize · m move together · d delete · v block / V rows · esc cancel",
+	modeVisual:    "hjkl extend · = organize · m move together · g frame · u unframe · d delete · v block / V rows · esc cancel",
 }
 
 func (m Model) View() string {
@@ -1072,6 +1160,7 @@ func (m Model) View() string {
 		}
 		header += "  " + modeStyle.Background(lipgloss.Color("141")).Render(label)
 	}
+	header += m.breadcrumb(m.width - lipgloss.Width(header) - 3)
 
 	body := m.viewBoard()
 
@@ -1083,6 +1172,9 @@ func (m Model) View() string {
 		footer = msgStyle.Render(m.msg)
 	default:
 		h := help[m.mode]
+		if m.selectedFrame() != nil && m.mode == modeNormal && !m.preview {
+			h = "FRAME  m move · x unframe · ␣ done all · i rename · K preview · ⏎ open · j back"
+		}
 		if m.preview && m.mode == modeNormal {
 			h = "PREVIEW  hjkl follow the cursor · ^d/^u scroll · i edit strategy · a new entry · ⏎ open in vim · K/esc close"
 		}
@@ -1095,7 +1187,10 @@ func (m Model) viewBoard() []string {
 	body := make([]string, m.bodyHeight())
 	l := newLayout(m.b, m.width)
 	m.refreshRoutes() // no-op unless View runs before the first Update
-	v := view{cursorRow: m.row, cursorCol: m.col, cursorSt: stBorderSel, stats: m.stats}
+	v := view{cursorRow: m.row, cursorCol: m.col, cursorSt: stBorderSel, stats: m.stats, frameSel: m.frameSel}
+	if m.selectedFrame() != nil {
+		v.cursorRow, v.cursorCol = -1, -1 // the frame is the cursor
+	}
 	if n := m.selected(); n != nil {
 		v.lit = n.ID
 	}
@@ -1121,7 +1216,7 @@ func (m Model) viewBoard() []string {
 		return m.drawEditor(screen)
 	}
 	if p, ok := m.previewBox(); ok {
-		p.draw(screen, m.selected().Title, m.previewScroll)
+		p.draw(screen, m.focus().Title, m.previewScroll)
 	}
 	for i := range body {
 		body[i] = screen.line(i)
@@ -1132,7 +1227,7 @@ func (m Model) viewBoard() []string {
 // refreshPreview rereads the preview when the cursor lands on another
 // node, starting it from the top.
 func (m *Model) refreshPreview() {
-	n := m.selected()
+	n := m.focus()
 	if !m.preview || n == nil {
 		m.previewID = ""
 		return
@@ -1149,7 +1244,7 @@ func (m *Model) refreshPreview() {
 
 // previewBox places the preview beside the cursor's card, if it is shown.
 func (m *Model) previewBox() (previewBox, bool) {
-	if !m.preview || m.mode != modeNormal || m.previewID == "" || m.selected() == nil {
+	if !m.preview || m.mode != modeNormal || m.previewID == "" || m.focus() == nil {
 		return previewBox{}, false
 	}
 	l := newLayout(m.b, m.width)

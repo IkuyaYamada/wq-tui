@@ -90,6 +90,45 @@ The break gets a line of its own below the edge lane, so edges only cross
 it straight down and never run along it; the label is placed where no edge
 crosses.
 
+## Frames
+
+A frame is a line drawn around some nodes to mark them as one meaningful
+cluster, say the pieces a node that grew too big was broken into. It has a
+title and, like a node, its own strategy and thread (`nodes/<id>/`). Frames
+live in board.json as `groups` and do not nest.
+
+```
+╭─ 設計 ───────────────── 1/3 ─╮
+│╭──────────╮  ╭──────────╮    │
+││ スキーマ │  │ API      │    │
+│╰──────────╯  ╰──────────╯    │
+│╭──────────╮                  │
+││ 移行     │                  │
+│╰──────────╯                  │
+╰──────────────────────────────╯
+```
+
+| Key | Action |
+| --- | --- |
+| `v` / `V` … `g` | Frame the selection; asks for a title (`Esc` gives up) |
+| `v` / `V` … `u` | Take the selection out of its frames; an empty frame disappears |
+| `gs` | Split the node into a frame: the frame keeps its title, url and notes, a first child takes its cell and edges and asks for a title (`Esc` undoes the split) |
+| `k` on a frame's top row | Select the frame (bold); `j` goes back in, `k` again leaves upward |
+
+With a frame selected: `m` moves its members together, `x` removes the frame
+(members stay), `Space` completes every member (or reopens them all when
+all are done), `i` renames it, `K` previews and `Enter` opens its own
+notes in vim. Edges stay between nodes: `c` does nothing on a frame.
+The header line names where the cursor is in full, frame › node, as frame
+lines and cards cut long titles short.
+
+A frame is the smallest rectangle around its members and follows them as
+they move; it never adds columns or constrains moves and edges. `o` / `O`
+from a member, and `a` on a member or an empty cell inside a frame, add the
+new node to that frame. Edges cross frames but never run along them. A node
+that is not a member can still sit inside a frame's rectangle: move it out,
+or frame it too.
+
 ## Maturity meters
 
 Two small bars on the left end of a card's bottom border show how much has

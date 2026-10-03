@@ -35,6 +35,7 @@ type Board struct {
 	Nodes  []Node  `json:"nodes"`
 	Edges  []Edge  `json:"edges"`
 	Breaks []Break `json:"breaks,omitempty"`
+	Groups []Group `json:"groups,omitempty"`
 
 	extra map[string]json.RawMessage // fields from a newer wq, kept as-is
 }
@@ -71,6 +72,7 @@ func (b *Board) Clone() *Board {
 		Nodes:  append([]Node(nil), b.Nodes...),
 		Edges:  append([]Edge(nil), b.Edges...),
 		Breaks: append([]Break(nil), b.Breaks...),
+		Groups: cloneGroups(b.Groups),
 		extra:  b.extra,
 	}
 }
@@ -300,6 +302,7 @@ func (b *Board) Delete(id string) error {
 		}
 	}
 	b.Nodes = nodes
+	b.leaveGroups(map[string]bool{id: true})
 	edges := b.Edges[:0]
 	for _, e := range b.Edges {
 		if e.From != id && e.To != id {
