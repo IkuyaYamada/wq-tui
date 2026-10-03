@@ -79,6 +79,7 @@ const (
 	stTitle
 	stTitleSel
 	stTitleDone
+	stTitleDoneSel
 	stEdge
 	stEdgeHL
 	stDot
@@ -93,6 +94,7 @@ var styles = map[style]lipgloss.Style{
 	stTitle:        lipgloss.NewStyle(),
 	stTitleSel:     lipgloss.NewStyle().Bold(true),
 	stTitleDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")).Strikethrough(true),
+	stTitleDoneSel: lipgloss.NewStyle().Foreground(lipgloss.Color("248")).Strikethrough(true),
 	stEdge:         lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 	stEdgeHL:       lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
 	stDot:          lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
@@ -291,8 +293,12 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		case n.Done:
 			border, title = stBorderDone, stTitleDone
 		}
-		if n.Done && title != stTitleSel {
+		// A done node keeps its struck-through title even under the cursor.
+		if n.Done {
 			title = stTitleDone
+			if bold {
+				title = stTitleDoneSel
+			}
 		}
 		drawCard(cv, l, n, border, title, bold)
 	}

@@ -83,3 +83,16 @@ func TestTitleRows(t *testing.T) {
 		}
 	}
 }
+
+func TestSelectedDoneNodeStillLooksDone(t *testing.T) {
+	b := &board.Board{Nodes: []board.Node{{ID: "a", Title: "済", Row: 0, Col: 0, Done: true}}}
+	l := newLayout(b, 120)
+	cv := renderBoard(b, l, nil, view{cursorRow: 0, cursorCol: 0, cursorSt: stBorderSel})
+	x, y := l.colX(0)+2, l.rowY[0]+1
+	if c := cv.cells[y*cv.w+x]; c.r != '✓' || c.st != stTitleDoneSel {
+		t.Errorf("title cell %q style %v", c.r, c.st)
+	}
+	if c := cv.cells[l.rowY[0]*cv.w+l.colX(0)]; c.st != stBorderSel {
+		t.Errorf("cursor border should still show, style %v", c.st)
+	}
+}
