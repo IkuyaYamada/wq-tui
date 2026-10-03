@@ -2,8 +2,10 @@ package ui
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -476,5 +478,64 @@ func TestURLEditedInVimIsAdopted(t *testing.T) {
 	m = press(t, m, "u")
 	if got := m.selected().URL; got != "" {
 		t.Errorf("undo should clear url, got %q", got)
+	}
+}
+
+// writeElsewhere saves b the way a second wq would, nudging the mtime so the
+// change is visible even on coarse-grained filesystems.
+func writeElsewhere(t *testing.T, dir string, b *board.Board) {
+	t.Helper()
+	if err := board.Save(dir, b); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(2 * time.Second)
+	os.Chtimes(filepath.Join(dir, "board.json"), later, later)
+}
+
+func TestStaleBoardRefusesEditsUntilReload(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	m = press(t, m, "a", "こちら", "<enter>")
+
+	other, _ := board.Load(dir)
+	other.Nodes = append(other.Nodes, board.Node{ID: "x", Title: "あちら", Row: 0, Col: 3})
+	writeElsewhere(t, dir, other)
+
+	// Looking around is fine; editing is refused and nothing is written.
+	m = press(t, m, "l")
+	m = press(t, m, "a")
+	if m.mode != modeNormal || !m.stale || !strings.Contains(m.msg, "R to reload") {
+		t.Fatalf("mode %v stale %v msg %q", m.mode, m.stale, m.msg)
+	}
+	if !strings.Contains(m.View(), "changed in another wq") {
+		t.Error("header should flag the stale board")
+	}
+	if onDisk, _ := board.Load(dir); len(onDisk.Nodes) != 2 {
+		t.Fatalf("other wq's node was overwritten: %d nodes", len(onDisk.Nodes))
+	}
+
+	m = press(t, m, "R")
+	if m.stale || len(m.b.Nodes) != 2 || len(m.undo) != 0 {
+		t.Fatalf("reload: stale %v nodes %d undo %d", m.stale, len(m.b.Nodes), len(m.undo))
+	}
+	m = press(t, m, "j", "a", "追加", "<enter>")
+	if onDisk, _ := board.Load(dir); len(onDisk.Nodes) != 3 {
+		t.Errorf("edit after reload not saved: %d nodes", len(onDisk.Nodes))
+	}
+}
+
+func TestSaveRefusesWhenBoardChangedDuringInput(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	m = press(t, m, "a", "最初", "<enter>", "i")
+	other, _ := board.Load(dir)
+	other.Nodes[0].Title = "あちらで改名"
+	writeElsewhere(t, dir, other)
+	m = press(t, m, "こちらで改名", "<enter>")
+	if onDisk, _ := board.Load(dir); onDisk.Nodes[0].Title != "あちらで改名" {
+		t.Errorf("overwrote the other wq: %q", onDisk.Nodes[0].Title)
+	}
+	if !m.stale || !strings.HasPrefix(m.msg, "not saved") {
+		t.Errorf("stale %v msg %q", m.stale, m.msg)
 	}
 }

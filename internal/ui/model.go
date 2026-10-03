@@ -67,6 +67,11 @@ type Model struct {
 	routes   []route
 	routeKey string
 
+	// stamp is board.json as this wq last read or wrote it; stale is set
+	// once another wq has written it since.
+	stamp board.Stamp
+	stale bool
+
 	// ime switches to ASCII on the board and back to imePrev (the input
 	// method in use before, e.g. Japanese) while a title is being typed.
 	ime        ime.Switcher
@@ -91,6 +96,7 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	m.toASCII()
 	m.asciiAgain = false
 	m.cursorTo(firstOpen(b))
+	m.stamp, _ = board.CurrentStamp(dir)
 	return m
 }
 
@@ -136,10 +142,56 @@ func (m *Model) checkpoint() {
 	m.redo = nil
 }
 
+// save writes the board unless another wq has written board.json since
+// this one last read or wrote it; then nothing is written and the board is
+// flagged stale until R reloads it.
 func (m *Model) save() {
+	if m.checkStale() {
+		m.msg = "not saved: " + staleMsg
+		return
+	}
 	if err := board.Save(m.dir, m.b); err != nil {
 		m.msg = "save failed: " + err.Error()
+		return
 	}
+	m.stamp, _ = board.CurrentStamp(m.dir)
+}
+
+const staleMsg = "board.json was changed by another wq — R to reload"
+
+// checkStale compares board.json on disk with what this wq last saw.
+func (m *Model) checkStale() bool {
+	if !m.stale {
+		cur, err := board.CurrentStamp(m.dir)
+		m.stale = err == nil && !cur.Same(m.stamp)
+	}
+	return m.stale
+}
+
+// reload adopts board.json from disk. Undo history is dropped: replaying
+// it would overwrite what the other wq wrote.
+func (m *Model) reload() {
+	b, err := board.Load(m.dir)
+	if err != nil {
+		m.msg = "reload failed: " + err.Error()
+		return
+	}
+	m.b = b
+	m.stamp, _ = board.CurrentStamp(m.dir)
+	m.stale = false
+	m.undo, m.redo = nil, nil
+	m.clampCursor()
+	m.msg = "reloaded"
+}
+
+// readOnlyKeys still work on a stale board: they only look around or
+// leave. Everything else waits for R.
+var readOnlyKeys = map[string]bool{
+	"h": true, "j": true, "k": true, "l": true,
+	"left": true, "down": true, "up": true, "right": true,
+	"w": true, "b": true, "g": true, "G": true, "x": true, // x only after g (gx)
+	"enter": true, "q": true, "ctrl+c": true, "R": true, "esc": true,
+	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
 }
 
 // selected is the node under the cursor, if any.
@@ -218,6 +270,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.msg = ""
 		if m.mode != modeInput {
 			msg = halfwidth(msg)
+		}
+		if m.mode == modeNormal || m.mode == modeVisual {
+			key := msg.String()
+			if key == "R" && m.mode == modeNormal {
+				m.reload()
+				break
+			}
+			if m.checkStale() && (!readOnlyKeys[key] || (key == "x" && !m.pendingG)) {
+				m.pendingD = false
+				m.msg = staleMsg
+				break
+			}
 		}
 		switch m.mode {
 		case modeNormal:
@@ -695,6 +759,9 @@ func (m *Model) toggleDone(comment string) {
 		event = "Completed"
 	}
 	m.save()
+	if m.stale {
+		return // not saved, so do not log it either
+	}
 	if comment != "" {
 		event += ": " + comment
 	}
@@ -727,7 +794,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · w/b next/prev node · gg top · gx open url · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · u/^r undo/redo · q quit",
 	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
@@ -742,6 +809,9 @@ func (m Model) View() string {
 		}
 	}
 	header := headerStyle.Render("wq") + dimStyle.Render(fmt.Sprintf("  %d nodes · %d done", len(m.b.Nodes), done))
+	if m.stale {
+		header += "  " + msgStyle.Render("⟳ changed in another wq — R to reload")
+	}
 	switch m.mode {
 	case modeMove:
 		header += "  " + modeStyle.Background(lipgloss.Color("81")).Render(" MOVE ")

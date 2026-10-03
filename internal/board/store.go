@@ -63,3 +63,24 @@ func NewID(now time.Time) string {
 	_, _ = rand.Read(r[:])
 	return now.Format("20060102-150405") + "-" + hex.EncodeToString(r[:])
 }
+
+// Stamp identifies a version of board.json on disk, so a wq can tell when
+// another one has written it since.
+type Stamp struct {
+	ModTime time.Time
+	Size    int64
+}
+
+// CurrentStamp reads board.json's stamp; a missing file has the zero stamp.
+func CurrentStamp(dir string) (Stamp, error) {
+	info, err := os.Stat(filepath.Join(dir, "board.json"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return Stamp{}, nil
+	}
+	if err != nil {
+		return Stamp{}, err
+	}
+	return Stamp{ModTime: info.ModTime(), Size: info.Size()}, nil
+}
+
+func (s Stamp) Same(o Stamp) bool { return s.ModTime.Equal(o.ModTime) && s.Size == o.Size }

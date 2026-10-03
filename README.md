@@ -41,6 +41,7 @@ Plain files, so the directory can be a git repo of its own.
 | `Enter` | Open the node in vim (strategy, thread index, entry) |
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
+| `R` | Reload board.json after another wq changed it |
 | `u` / `Ctrl+r` | Undo / redo |
 | `q` | Quit |
 
@@ -56,6 +57,18 @@ lines chains up vertically and undoes crossings. Unlinked nodes in the
 selection and everything outside it stay put. If a full row would push a node
 level with or below one of its successors outside the selection, nothing
 changes and an error is shown. One `u` undoes it.
+
+## Several wq at once
+
+Running wq in more than one terminal is safe. Each one remembers the
+board.json it last read or wrote; when another wq has written it since, the
+header shows `⟳ changed in another wq — R to reload` and every key that would
+change the board is refused (moving around, `gx`, opening a node and `q` still
+work). A save that would overwrite the other wq's change is not written
+either. `R` loads the current board.json and clears the undo history, so undo
+can never roll back the other wq's work. Thread entries and strategy files
+are separate per node and are not affected; vim's own swap-file warning
+covers the same file being open twice.
 
 ## Rules
 
