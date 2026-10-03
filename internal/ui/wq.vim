@@ -168,6 +168,8 @@ nnoremap <buffer> <silent> D :call <SID>trash_under_cursor()<CR>
 call win_gotoid(s:strategy_win)
 execute 'vertical resize ' . (&columns / 2)
 call s:show_index()
+" Start in the strategy; the index keeps its cursor on the newest entry.
+call win_gotoid(s:strategy_win)
 
 augroup wq
   autocmd!

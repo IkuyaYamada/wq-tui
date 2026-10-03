@@ -27,7 +27,9 @@ func TestNodeVimScript(t *testing.T) {
 	out := filepath.Join(dir, "out.txt")
 	check := filepath.Join(dir, "check.vim")
 	os.WriteFile(check, []byte(`redir! > `+out+`
-echo "wins=" . winnr("$") . " cur=" . bufname("%") . " line=" . line(".")
+echo "wins=" . winnr("$") . " cur=" . fnamemodify(bufname("%"), ":t")
+wincmd l
+echo "index line=" . line(".")
 echo join(getline(1, "$"), "|")
 normal gg
 execute "normal \<CR>"
@@ -61,7 +63,8 @@ normal q
 		}
 	}
 	want := []string{
-		"wins=2 cur=[thread] line=2",
+		"wins=2 cur=strategy.md",
+		"index line=2",
 		"  10/01 14:03  クエリ流した|  10/01 15:20  ログ見たら500多発",
 		"opened wins=2 cur=20261001-140300.md",
 		"back cur=[thread] line=1",

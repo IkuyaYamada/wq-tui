@@ -66,7 +66,7 @@ changes and an error is shown. One `u` undoes it.
 
 ## Opening a node
 
-`Enter` on a node opens it straight in vim as two panes: the strategy on the
+`Enter` on a node opens it straight in vim as two panes, cursor in the strategy on the
 left, the thread on the right. The thread pane shows the entry index; `Enter`
 opens an entry in that same pane and `Esc` (normal mode) saves it and goes
 back to the index.
