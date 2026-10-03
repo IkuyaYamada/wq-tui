@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -582,4 +583,48 @@ func TestOAndShiftOMakeRoomWhenBlocked(t *testing.T) {
 	if got := titles(m.b); got["上"] != [2]int{0, 0} {
 		t.Errorf("undo O: %v", got)
 	}
+}
+
+func TestScrollKeys(t *testing.T) {
+	b := &board.Board{}
+	for r := 0; r < 30; r++ {
+		b.Nodes = append(b.Nodes, board.Node{ID: fmt.Sprint(r), Title: fmt.Sprint(r), Row: r})
+	}
+	m := New(t.TempDir(), b)
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 22}) // 20 body lines = 4 rows
+	m = n.(Model)
+	rowH := cardH + laneH
+
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlD})
+	if m.row != 2 || m.scroll != 2*rowH {
+		t.Errorf("C-d: row %d scroll %d", m.row, m.scroll)
+	}
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlU})
+	if m.row != 0 || m.scroll != 0 {
+		t.Errorf("C-u: row %d scroll %d", m.row, m.scroll)
+	}
+
+	for i := 0; i < 10; i++ {
+		m = press(t, m, "j")
+	}
+	m = press(t, m, "z", "t")
+	if m.scroll != 10*rowH {
+		t.Errorf("zt: scroll %d", m.scroll)
+	}
+	m = press(t, m, "z", "b")
+	if want := 10*rowH + cardH + 1 - m.bodyHeight(); m.scroll != want {
+		t.Errorf("zb: scroll %d want %d", m.scroll, want)
+	}
+	m = press(t, m, "z", "z")
+	if want := 10*rowH + cardH/2 - m.bodyHeight()/2; m.scroll != want {
+		t.Errorf("zz: scroll %d want %d", m.scroll, want)
+	}
+	if m.row != 10 {
+		t.Errorf("z commands must not move the cursor: row %d", m.row)
+	}
+}
+
+func pressKey(m Model, k tea.KeyMsg) Model {
+	n, _ := m.Update(k)
+	return n.(Model)
 }

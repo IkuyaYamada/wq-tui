@@ -57,6 +57,7 @@ type Model struct {
 	pendingD       bool   // first d of dd was pressed
 	pendingG       bool   // first g of gg / gx was pressed
 	pendingBracket string // "[" or "]" waiting for Space: empty row above / below
+	pendingZ       bool   // first z of zz / zt / zb was pressed
 
 	openURL  func(string) error // opens a node's url; swapped out in tests
 	connFrom string
@@ -193,6 +194,7 @@ var readOnlyKeys = map[string]bool{
 	"w": true, "b": true, "g": true, "G": true, "x": true, // x only after g (gx)
 	"enter": true, "q": true, "ctrl+c": true, "R": true, "esc": true,
 	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
+	"ctrl+d": true, "ctrl+u": true, "z": true, "t": true, // scrolling (zz / zt / zb)
 }
 
 // selected is the node under the cursor, if any.
@@ -384,6 +386,11 @@ func dirOf(k string) (board.Dir, bool) {
 
 func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
+	if m.pendingZ {
+		m.pendingZ = false
+		m.align(key)
+		return nil
+	}
 	if m.pendingBracket != "" {
 		side := m.pendingBracket
 		m.pendingBracket = ""
@@ -464,6 +471,13 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		return openNode(m.dir, *n)
 	case "D":
 		m.deleteRow()
+	case "z":
+		m.pendingZ = true
+		m.msg = "z…"
+	case "ctrl+d":
+		m.halfPage(1)
+	case "ctrl+u":
+		m.halfPage(-1)
 	case "[", "]":
 		m.pendingBracket = key
 		m.msg = key + "…"
@@ -487,6 +501,31 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		m.history(&m.redo, &m.undo, "redo")
 	}
 	return nil
+}
+
+// halfPage scrolls half a screen down (dir 1) or up (-1), moving the
+// cursor by the same number of rows, like vim's C-d / C-u.
+func (m *Model) halfPage(dir int) {
+	rows := max(1, m.bodyHeight()/2/(cardH+laneH))
+	before := m.row
+	m.row = max(0, min(m.row+dir*rows, m.lastRow()))
+	m.scroll += (m.row - before) * (cardH + laneH)
+}
+
+// align puts the cursor's row at the middle (zz), top (zt) or bottom (zb)
+// of the screen.
+func (m *Model) align(key string) {
+	l := newLayout(m.b, m.width)
+	top := l.rowY[min(m.row, len(l.rowY)-1)]
+	h := m.bodyHeight()
+	switch key {
+	case "z":
+		m.scroll = top + cardH/2 - h/2
+	case "t":
+		m.scroll = top
+	case "b":
+		m.scroll = top + cardH + 1 - h
+	}
 }
 
 // insertRow opens an empty row above the cursor's row ([ Space) or below it
@@ -828,7 +867,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · ^d/^u half page · zz/zt/zb align · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · u/^r undo/redo · q quit",
 	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",
