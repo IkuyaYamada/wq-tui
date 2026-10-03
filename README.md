@@ -41,6 +41,7 @@ Plain files, so the directory can be a git repo of its own.
 | `Enter` | Open the node in vim (strategy, thread index, entry) |
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
+| `[` `Space` / `]` `Space` | Open an empty row above / below the cursor's row (rows below move down; the cursor stays on its node) |
 | `R` | Reload board.json after another wq changed it |
 | `u` / `Ctrl+r` | Undo / redo |
 | `q` | Quit |

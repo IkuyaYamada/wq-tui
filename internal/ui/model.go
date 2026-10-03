@@ -54,8 +54,9 @@ type Model struct {
 	visAnchor [2]int
 	visLine   bool
 
-	pendingD bool // first d of dd was pressed
-	pendingG bool // first g of gg / gx was pressed
+	pendingD       bool   // first d of dd was pressed
+	pendingG       bool   // first g of gg / gx was pressed
+	pendingBracket string // "[" or "]" waiting for Space: empty row above / below
 
 	openURL  func(string) error // opens a node's url; swapped out in tests
 	connFrom string
@@ -383,6 +384,14 @@ func dirOf(k string) (board.Dir, bool) {
 
 func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
+	if m.pendingBracket != "" {
+		side := m.pendingBracket
+		m.pendingBracket = ""
+		if key == " " {
+			m.insertRow(side == "]")
+		}
+		return nil
+	}
 	if m.pendingG {
 		m.pendingG = false
 		switch key {
@@ -455,6 +464,9 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		return openNode(m.dir, *n)
 	case "D":
 		m.deleteRow()
+	case "[", "]":
+		m.pendingBracket = key
+		m.msg = key + "…"
 	case "v", "V":
 		m.mode = modeVisual
 		m.visAnchor = [2]int{m.row, m.col}
@@ -475,6 +487,24 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		m.history(&m.redo, &m.undo, "redo")
 	}
 	return nil
+}
+
+// insertRow opens an empty row above the cursor's row ([ Space) or below it
+// (] Space); the cursor stays on its node.
+func (m *Model) insertRow(below bool) {
+	row := m.row
+	if below {
+		row++
+	}
+	if row > m.b.MaxRow() {
+		return // the buffer rows below the last node are already empty
+	}
+	m.checkpoint()
+	m.b.InsertRow(row)
+	if !below {
+		m.row++
+	}
+	m.save()
 }
 
 // deleteRow removes the cursor's row, nodes included, and pulls the rows
@@ -798,7 +828,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · u/^r undo/redo · q quit",
 	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",

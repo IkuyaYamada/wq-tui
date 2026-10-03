@@ -551,3 +551,30 @@ func TestDoneNoteSetAndCleared(t *testing.T) {
 		t.Errorf("reopen should clear the note, got %q", got)
 	}
 }
+
+func TestBracketSpaceAddsEmptyRows(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "上", "<enter>", "o", "下", "<enter>")
+	// [ Space on 下: empty row above it, cursor follows 下.
+	m = press(t, m, "[", "<space>")
+	if got := titles(m.b); got["上"] != [2]int{0, 0} || got["下"] != [2]int{2, 0} {
+		t.Fatalf("after [ space: %v", got)
+	}
+	if n := m.selected(); n == nil || n.Title != "下" {
+		t.Errorf("cursor left 下: %+v", n)
+	}
+	// ] Space on 上: empty row below it.
+	m = press(t, m, "k", "k", "]", "<space>")
+	if got := titles(m.b)["下"]; got != [2]int{3, 0} {
+		t.Errorf("after ] space: 下 at %v", got)
+	}
+	// [ then another key does nothing.
+	m = press(t, m, "[", "j")
+	if got := titles(m.b)["下"]; got != [2]int{3, 0} || m.row != 0 {
+		t.Errorf("[ j: 下 %v row %d", got, m.row)
+	}
+	m = press(t, m, "u", "u")
+	if got := titles(m.b)["下"]; got != [2]int{1, 0} {
+		t.Errorf("undo: %v", got)
+	}
+}

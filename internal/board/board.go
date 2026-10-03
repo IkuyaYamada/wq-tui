@@ -250,6 +250,17 @@ func (b *Board) roomAbove(id string, row, col int) error {
 	return nil
 }
 
+// InsertRow opens an empty row at row by pushing it and every row below
+// down by one. Relative row order is unchanged, so every edge still points
+// down.
+func (b *Board) InsertRow(row int) {
+	for i := range b.Nodes {
+		if b.Nodes[i].Row >= row {
+			b.Nodes[i].Row++
+		}
+	}
+}
+
 // DeleteRow removes a row: its nodes are deleted (bridging simple chains as
 // Delete does) and every row below is pulled up by one. Relative row order
 // is unchanged, so every edge still points down.

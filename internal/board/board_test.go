@@ -224,3 +224,11 @@ func TestInsertBeforeUsesFreeCellAbove(t *testing.T) {
 		}
 	}
 }
+
+func TestInsertRowPushesRowsDown(t *testing.T) {
+	b := &Board{Nodes: []Node{node("A", 0, 0), node("B", 1, 2), node("C", 2, 0)}, Edges: []Edge{{"A", "C"}}}
+	b.InsertRow(1)
+	if pos(t, b, "A") != [2]int{0, 0} || pos(t, b, "B") != [2]int{2, 2} || pos(t, b, "C") != [2]int{3, 0} {
+		t.Errorf("A %v B %v C %v", pos(t, b, "A"), pos(t, b, "B"), pos(t, b, "C"))
+	}
+}
