@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""pre-push: keep private data out of this public repository.
+
+Two passes over what is about to be pushed (added lines and commit messages):
+
+1. Mechanical: text taken from the local wq data directory (node titles,
+   completion comments, break labels, urls, strategy and thread lines), local
+   home paths, e-mail addresses and credential-looking strings.
+2. Semantic: the same diff is handed to `claude -p` (sonnet, no tools), which
+   answers "OK" or "NG: <reason>".
+
+Either one failing stops the push. WQ_SKIP_REVIEW=1 skips pass 2 only;
+`git push --no-verify` skips both. Nothing private is written in this file:
+the data directory is read at run time.
+
+Enable with:  git config core.hooksPath .githooks
+Dry run:      .githooks/pre-push --check origin/main..HEAD
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+ZERO = "0" * 40
+DATA_DIR = os.environ.get("WQ_DIR") or os.path.expanduser("~/wq")
+# Shorter private strings are too likely to match by accident. ASCII-only
+# ones ("zero", "deploy") read like ordinary code, so they need more length
+# and whole-word matches; anything with Japanese in it is distinctive sooner.
+MIN_TERM = 4
+MIN_ASCII_TERM = 12
+MAX_REVIEW_CHARS = 150_000
+COMMON = {"Completed", "Reopened", "title:", "url:", "---"}
+
+PATTERNS = [
+    (re.compile(r"/(?:Users|home)/[A-Za-z0-9._-]+"), "local home path"),
+    (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "e-mail address"),
+    (re.compile(r"\b(?:ghp|gho|ghs|github_pat)_[A-Za-z0-9_]{20,}"), "GitHub token"),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{20,}"), "API key"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "AWS access key"),
+    (re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"), "Slack token"),
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "private key"),
+]
+ALLOWED_EMAILS = re.compile(r"noreply@anthropic\.com$|@users\.noreply\.github\.com$|@example\.(?:com|org)$")
+
+REVIEW_PROMPT = """You are checking a push to a PUBLIC GitHub repository, wq-tui: a small
+open-source terminal task board written in Go. Below are the commit messages
+and the lines being added. Decide whether anything private would be published:
+personal names, real personal or work tasks and notes, company or customer
+names, private URLs, local machine paths, e-mail addresses, credentials, or
+text that reads like someone's real data rather than made-up examples.
+
+Ordinary code, comments, docs and obviously invented test fixtures (generic
+titles such as 設計, 実装, リリース, クエリ流した) are fine.
+
+Answer with exactly "OK" on the first line if nothing private is there.
+Otherwise answer "NG: <short reason>" on the first line, then at most five
+lines quoting what looked private."""
+
+
+def git(*args):
+    return subprocess.run(["git", *args], check=True, capture_output=True, text=True).stdout
+
+
+def ranges_from_stdin():
+    """pre-push gets '<local ref> <local sha> <remote ref> <remote sha>' lines."""
+    out = []
+    for line in sys.stdin:
+        parts = line.split()
+        if len(parts) != 4 or parts[1] == ZERO:
+            continue  # malformed, or deleting a remote branch
+        local, remote = parts[1], parts[3]
+        out.append(f"{remote}..{local}" if remote != ZERO else f"{local} --not --remotes")
+    return out
+
+
+def pushed_text(rng):
+    """Commit messages plus added lines (without the leading +) in rng."""
+    log = git("log", "-p", "--no-color", "--format=%n%B", *rng.split())
+    lines = []
+    for line in log.splitlines():
+        if line.startswith("+++"):
+            continue
+        if line.startswith("+"):
+            lines.append(line[1:])
+        elif not line.startswith(("-", " ", "@@", "diff ", "index ", "new file", "deleted file", "similarity", "rename ", "Binary ")):
+            lines.append(line)  # commit message lines
+    return "\n".join(lines)
+
+
+def private_terms():
+    """Strings from the local wq data that must never show up in a push."""
+    terms = set()
+    board_path = os.path.join(DATA_DIR, "board.json")
+    try:
+        with open(board_path, encoding="utf-8") as f:
+            board = json.load(f)
+    except (OSError, ValueError):
+        board = {}
+    for n in board.get("nodes", []):
+        for key in ("title", "url", "done_note"):
+            if n.get(key):
+                terms.add(n[key])
+    for br in board.get("breaks", []) or []:
+        if br.get("label"):
+            terms.add(br["label"])
+    for path in glob.glob(os.path.join(DATA_DIR, "nodes", "*", "**", "*.md"), recursive=True):
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip().lstrip("-#*> ").strip()
+                    for prefix in ("title:", "url:", "Completed:", "Reopened:"):
+                        if line.startswith(prefix):
+                            line = line[len(prefix):].strip()
+                    terms.add(line)
+        except OSError:
+            pass
+    return {t.strip() for t in terms if len(t.strip()) >= MIN_TERM and t.strip() not in COMMON}
+
+
+def mechanical(text):
+    problems = []
+    for term in sorted(private_terms()):
+        if term.isascii():
+            if len(term) < MIN_ASCII_TERM:
+                continue
+            hit = re.search(r"(?<![A-Za-z0-9_])" + re.escape(term) + r"(?![A-Za-z0-9_])", text)
+        else:
+            hit = term in text
+        if hit:
+            problems.append(f"text from {DATA_DIR}: {term[:60]!r}")
+    for pattern, what in PATTERNS:
+        for m in pattern.finditer(text):
+            hit = m.group(0)
+            if what == "e-mail address" and ALLOWED_EMAILS.search(hit):
+                continue
+            problems.append(f"{what}: {hit[:60]!r}")
+    return problems
+
+
+def review(text):
+    """Ask Claude; returns (ok, message)."""
+    if len(text) > MAX_REVIEW_CHARS:
+        text = text[:MAX_REVIEW_CHARS] + "\n[truncated]"
+    try:
+        with tempfile.TemporaryDirectory() as cwd:  # keep repo settings out of it
+            res = subprocess.run(
+                ["claude", "-p", "--tools", "", "--model", "sonnet", "--no-session-persistence", REVIEW_PROMPT],
+                input=text, capture_output=True, text=True, timeout=240, cwd=cwd,
+            )
+    except FileNotFoundError:
+        return False, "claude command not found"
+    except subprocess.TimeoutExpired:
+        return False, "claude review timed out"
+    answer = res.stdout.strip()
+    if res.returncode != 0 or not answer:
+        return False, f"claude review failed: {res.stderr.strip() or answer or res.returncode}"
+    first = answer.splitlines()[0].strip()
+    if first == "OK":
+        return True, "OK"
+    return False, answer
+
+
+def main():
+    if len(sys.argv) >= 3 and sys.argv[1] == "--check":
+        ranges = [" ".join(sys.argv[2:])]
+    else:
+        ranges = ranges_from_stdin()
+    text = "\n".join(pushed_text(r) for r in ranges).strip()
+    if not text:
+        return 0
+
+    problems = mechanical(text)
+    if problems:
+        print("pre-push: possible private data, push stopped:", file=sys.stderr)
+        for p in problems[:20]:
+            print(f"  - {p}", file=sys.stderr)
+        print("Fix the commits, or push with --no-verify if this is a false alarm.", file=sys.stderr)
+        return 1
+
+    if os.environ.get("WQ_SKIP_REVIEW") == "1":
+        print("pre-push: mechanical check passed; Claude review skipped (WQ_SKIP_REVIEW=1).", file=sys.stderr)
+        return 0
+    print("pre-push: mechanical check passed; asking Claude (sonnet) to review…", file=sys.stderr)
+    ok, message = review(text)
+    if ok:
+        print("pre-push: Claude review OK.", file=sys.stderr)
+        return 0
+    print("pre-push: Claude review stopped the push:", file=sys.stderr)
+    print("  " + message.replace("\n", "\n  "), file=sys.stderr)
+    print("Fix the commits, set WQ_SKIP_REVIEW=1 to skip the review, or push with --no-verify.", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

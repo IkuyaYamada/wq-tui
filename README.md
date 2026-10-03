@@ -155,3 +155,25 @@ board. Set `WQ_IME=off` to leave the input source alone.
 The switch goes through the Carbon Text Input Sources API, loaded at runtime
 with purego, so no cgo is needed. `WQ_IME_LIVE=1 go test ./internal/ime`
 checks it against the real input source (and restores it).
+
+## Pushing (private data check)
+
+This repository is public, while wq's data lives in `~/wq`. A pre-push hook
+in `.githooks/` keeps the two apart. Enable it once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+On every push it looks at the added lines and commit messages being pushed:
+
+1. a mechanical pass for text taken from the wq data directory (titles,
+   completion comments, break labels, urls, strategy and thread lines), local
+   home paths, e-mail addresses and credential-looking strings;
+2. a review by `claude -p` (sonnet, no tools) that answers OK or NG for
+   anything that reads like private information.
+
+Either one stops the push with the reason. `WQ_SKIP_REVIEW=1 git push` skips
+the Claude review; `git push --no-verify` skips both.
+`.githooks/pre-push --check origin/main..HEAD` runs the check without pushing.
+
