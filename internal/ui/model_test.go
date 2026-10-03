@@ -666,3 +666,37 @@ func TestDashTogglesSessionBreak(t *testing.T) {
 		t.Error("undo should bring the break back")
 	}
 }
+
+func TestCtrlECtrlYScrollWithoutMovingCursor(t *testing.T) {
+	b := &board.Board{}
+	for r := 0; r < 30; r++ {
+		b.Nodes = append(b.Nodes, board.Node{ID: fmt.Sprint(r), Title: fmt.Sprint(r), Row: r})
+	}
+	m := New(t.TempDir(), b)
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 22}) // 4 rows visible
+	m = n.(Model)
+	rowH := cardH + laneH
+	m = press(t, m, "j", "j") // cursor on row 2, scroll 0
+
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlE})
+	if m.scroll != rowH || m.row != 2 {
+		t.Errorf("C-e: scroll %d row %d", m.scroll, m.row)
+	}
+	// Two more: row 2 would scroll off the top, so the cursor moves down.
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlE})
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlE})
+	if m.scroll != 3*rowH || m.row != 3 {
+		t.Errorf("C-e x3: scroll %d row %d", m.scroll, m.row)
+	}
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlY})
+	if m.scroll != 2*rowH || m.row != 3 {
+		t.Errorf("C-y: scroll %d row %d", m.scroll, m.row)
+	}
+	// Scrolling up past the cursor pulls it back on screen from below.
+	for i := 0; i < 2; i++ {
+		m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlY})
+	}
+	if m.scroll != 0 || m.row != 3 {
+		t.Errorf("C-y to top: scroll %d row %d", m.scroll, m.row)
+	}
+}

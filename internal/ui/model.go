@@ -195,7 +195,8 @@ var readOnlyKeys = map[string]bool{
 	"w": true, "b": true, "g": true, "G": true, "x": true, // x only after g (gx)
 	"enter": true, "q": true, "ctrl+c": true, "R": true, "esc": true,
 	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
-	"ctrl+d": true, "ctrl+u": true, "z": true, "t": true, // scrolling (zz / zt / zb)
+	"ctrl+d": true, "ctrl+u": true, "ctrl+e": true, "ctrl+y": true,
+	"z": true, "t": true, // scrolling (zz / zt / zb)
 }
 
 // selected is the node under the cursor, if any.
@@ -490,6 +491,10 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		m.halfPage(1)
 	case "ctrl+u":
 		m.halfPage(-1)
+	case "ctrl+e":
+		m.scrollRows(1)
+	case "ctrl+y":
+		m.scrollRows(-1)
 	case "[", "]":
 		m.pendingBracket = key
 		m.msg = key + "…"
@@ -522,6 +527,22 @@ func (m *Model) halfPage(dir int) {
 	before := m.row
 	m.row = max(0, min(m.row+dir*rows, m.lastRow()))
 	m.scroll += (m.row - before) * (cardH + laneH)
+}
+
+// scrollRows scrolls the view by n rows (C-e / C-y) without moving the
+// cursor, unless it would leave the screen; then it moves onto the nearest
+// visible row, as in vim.
+func (m *Model) scrollRows(n int) {
+	l := newLayout(m.b, m.width)
+	rowH := cardH + laneH
+	h := m.bodyHeight()
+	m.scroll = max(0, min(m.scroll+n*rowH, max(l.height-h, 0)))
+	for m.row < len(l.rowY)-1 && l.rowY[m.row] < m.scroll {
+		m.row++
+	}
+	for m.row > 0 && l.rowY[m.row]+cardH+1 > m.scroll+h {
+		m.row--
+	}
 }
 
 // align puts the cursor's row at the middle (zz), top (zt) or bottom (zb)
@@ -897,7 +918,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:  "hjkl cursor · ^d/^u half page · zz/zt/zb align · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · - session break · u/^r undo/redo · q quit",
+	modeNormal:  "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg top · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · x delete · dd/D delete row · [␣/]␣ add row · - session break · u/^r undo/redo · q quit",
 	modeInput:   "⏎ ok · esc cancel",
 	modeMove:    "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect: "hjkl pick target · ⏎ connect / disconnect · esc cancel",

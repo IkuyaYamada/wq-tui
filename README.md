@@ -30,6 +30,7 @@ Plain files, so the directory can be a git repo of its own.
 | `hjkl` / arrows | Move the cursor one cell (empty cells included) |
 | `w` / `b` | Jump to the next / previous node |
 | `Ctrl+d` / `Ctrl+u` | Scroll half a screen down / up, moving the cursor with it |
+| `Ctrl+e` / `Ctrl+y` | Scroll one row down / up; the cursor stays unless it would leave the screen |
 | `zz` / `zt` / `zb` | Put the cursor's row at the middle / top / bottom of the screen |
 | `gg` / `G` | Top / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
