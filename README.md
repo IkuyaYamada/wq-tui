@@ -60,16 +60,17 @@ Plain files, so the directory can be a git repo of its own.
 | `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
+| `yy` / `p` | Copy the node under the cursor: a dashed ghost then shows where it would go (the empty cell nearest the cursor) and follows the cursor; `p` pastes a copy there (title, url and strategy; open, no edges, its own thread) and moves onto it. The copy stays held for more `p`; `Esc` lets it go |
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it, `=` organizes it |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
 | `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), logs `Completed: <comment>` to the thread and shows the comment in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away (`Reopened`) and drops the comment |
 | `Enter` | Open the node in vim (strategy, thread index, entry) |
-| `K` | Preview the node beside its card: strategy, then the thread oldest first, read-only. It follows the cursor; `Ctrl+d` / `Ctrl+u` scroll it, `K` / `Esc` close it. For quick fixes without vim, `i` edits the strategy body in place and `a` writes a new thread entry: `Enter` is a new line, `Ctrl+s` saves, `Esc` cancels (asking once if anything changed). Older entries are edited in vim |
+| `K` | Preview the node beside its card: strategy, then the thread oldest first, read-only. It follows the cursor; `Ctrl+d` / `Ctrl+u` scroll it, `K` / `Esc` close it. For quick fixes without vim, `i` edits the strategy body in place and `a` writes a new thread entry: `Enter` is a new line, `Esc` (or `Ctrl+s`) saves and closes, `Ctrl+c` throws the changes away (asking once if anything changed). Older entries are edited in vim |
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
 | `[` `Space` / `]` `Space` | Open an empty row above / below the cursor's row (rows below move down; the cursor stays on its node) |
 | `-` | Draw a session break under the cursor's row, with an optional label ("今日はここまで"); `-` on a row that has one removes it |
-| `M` | Pick up the session break under the cursor's row: `j` / `k` move it to another gap (hopping over taken ones), `i` edits its label, `Enter` places it, `Esc` puts it back |
+| `M` | Pick up the session break under the cursor's row: `j` / `k` move it to another gap (hopping over taken ones), `i` edits its label, `x` deletes it, `Enter` places it, `Esc` puts it back |
 | `R` | Reload board.json after another wq changed it |
 | `u` / `Ctrl+r` | Undo / redo |
 | `q` | Quit |
@@ -209,6 +210,7 @@ say which.
 | `-` | anywhere | Show the index in the thread pane |
 | `C-w w` | anywhere | Switch panes |
 | `q` | anywhere | Save everything and return to the board |
+| `C-j` / `C-k` | anywhere | Save everything and open the next / previous node (the one `w` / `b` would pick) |
 
 Entries saved empty are removed on the way out. The layout comes from
 `internal/ui/wq.vim`, embedded in the binary and sourced with `vim -S`, so it

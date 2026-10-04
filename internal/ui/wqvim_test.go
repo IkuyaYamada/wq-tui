@@ -97,3 +97,34 @@ func TestVimString(t *testing.T) {
 		t.Errorf("got %s", got)
 	}
 }
+
+// TestNodeVimCtrlJK checks that C-j / C-k save everything and leave vim with
+// the exit codes wq reads as next / previous node.
+func TestNodeVimCtrlJK(t *testing.T) {
+	if _, err := exec.LookPath("vim"); err != nil {
+		t.Skip("vim not installed")
+	}
+	for key, want := range map[string]int{"<C-j>": 1, "<C-k>": -1} {
+		dir := t.TempDir()
+		threadDir := filepath.Join(dir, "thread")
+		os.MkdirAll(threadDir, 0o755)
+		strategy := filepath.Join(dir, "strategy.md")
+		os.WriteFile(strategy, []byte("方針\n"), 0o644)
+		script := filepath.Join(dir, "wq.vim")
+		os.WriteFile(script, nodeVimScript, 0o644)
+		check := filepath.Join(dir, "check.vim")
+		os.WriteFile(check, []byte(`call setline(1, "書き換え")
+execute "normal \`+key+`"
+`), 0o644)
+		err := exec.Command("vim", "-N", "-u", "NONE", "-es",
+			"--cmd", "let g:wq_thread_dir = "+vimString(threadDir),
+			"-S", script, "-S", check, strategy).Run()
+		step, err := exitStep(err)
+		if err != nil || step != want {
+			t.Errorf("%s: step %d err %v, want %d", key, step, err, want)
+		}
+		if body, _ := os.ReadFile(strategy); string(body) != "書き換え\n" {
+			t.Errorf("%s should save the strategy: %q", key, body)
+		}
+	}
+}

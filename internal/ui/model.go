@@ -56,6 +56,12 @@ type Model struct {
 	moveOrig   *board.Board
 	moveCur    [2]int
 
+	// yank is the node yy copied (title, url and strategy body as they were
+	// then). While it is held, a ghost card shows where p would paste a
+	// copy; Esc lets it go.
+	yank         *board.Node
+	yankStrategy string
+
 	// Visual mode selects the rectangle between visAnchor and the cursor,
 	// or whole rows when visLine is set.
 	visAnchor [2]int
@@ -67,6 +73,7 @@ type Model struct {
 
 	pendingD       bool   // first d of dd was pressed
 	pendingG       bool   // first g of gg / gx was pressed
+	pendingY       bool   // first y of yy was pressed
 	pendingBracket string // "[" or "]" waiting for Space: empty row above / below
 	pendingZ       bool   // first z of zz / zt / zb was pressed
 
@@ -92,7 +99,7 @@ type Model struct {
 	edit       textarea.Model
 	editKind   editKind
 	editOrig   string
-	editWarned bool // Esc was pressed once on unsaved changes
+	editWarned bool // ^c was pressed once on unsaved changes
 	editRows   int  // the preview's text height when editing began
 
 	// stamp is board.json as this wq last read or wrote it; stale is set
@@ -105,6 +112,8 @@ type Model struct {
 	ime        ime.Switcher
 	imePrev    string
 	asciiAgain bool // schedule a second switch to ASCII after this update
+
+	caret *Caret // where the terminal cursor rests while typing; nil to leave it
 }
 
 // Option configures a Model.
@@ -230,6 +239,7 @@ var readOnlyKeys = map[string]bool{
 	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
 	"ctrl+d": true, "ctrl+u": true, "ctrl+e": true, "ctrl+y": true,
 	"z": true, "t": true, // scrolling (zz / zt / zb)
+	"y": true, // yy only copies; p waits for R
 	"K": true, // preview
 }
 
@@ -286,6 +296,24 @@ func (m *Model) jump(step int) {
 	}
 }
 
+// openNeighbour moves from node id to the next (step 1) or previous (-1)
+// node, the one w / b would pick, and opens it in vim. At either end it
+// stays on the board.
+func (m *Model) openNeighbour(id string, step int) tea.Cmd {
+	m.cursorTo(m.b.Node(id))
+	m.jump(step)
+	n := m.selected()
+	if n == nil || n.ID == id {
+		if step > 0 {
+			m.msg = "no next node"
+		} else {
+			m.msg = "no previous node"
+		}
+		return nil
+	}
+	return openNode(m.dir, *n)
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch msg := msg.(type) {
@@ -309,6 +337,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stats[msg.id] = readStats(m.dir, msg.id)
 		}
 		m.toASCII()
+		if msg.step != 0 && msg.err == nil {
+			cmd = m.openNeighbour(msg.id, msg.step)
+		}
 	case tea.KeyMsg:
 		m.msg = ""
 		if m.mode != modeInput && m.mode != modeEdit {
@@ -321,7 +352,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 			if m.checkStale() && (!readOnlyKeys[key] || (key == "x" && !m.pendingG)) {
-				m.pendingD = false
+				m.pendingD, m.pendingY = false, false
 				m.msg = staleMsg
 				break
 			}
@@ -487,6 +518,13 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	}
+	if m.pendingY {
+		m.pendingY = false
+		if key == "y" {
+			m.yankNode()
+		}
+		return nil
+	}
 	if m.pendingD {
 		// dd deletes the row; any other key just cancels the pending d.
 		m.pendingD = false
@@ -620,6 +658,13 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	case "d":
 		m.pendingD = true
 		m.msg = "d…"
+	case "y":
+		m.pendingY = true
+		m.msg = "y…"
+	case "p":
+		m.paste()
+	case "esc":
+		m.yank = nil
 	case "x":
 		if n == nil {
 			return nil
@@ -885,6 +930,50 @@ func (m *Model) startMove(ids []string) {
 	m.mode = modeMove
 }
 
+// yankNode copies the node under the cursor for p.
+func (m *Model) yankNode() {
+	n := m.selected()
+	if n == nil {
+		return
+	}
+	y := board.Node{Title: n.Title, URL: n.URL}
+	m.yank, m.yankStrategy = &y, strategyBody(m.dir, *n)
+	m.msg = "yanked: " + n.Title
+}
+
+// pasteCell is where p would put the copy: the empty cell nearest the
+// cursor, as for a.
+func (m *Model) pasteCell() (row, col int) { return m.b.NearestEmpty(m.row, m.col) }
+
+// paste puts a copy of the yanked node where the ghost shows and moves the
+// cursor onto it, as vim's p does. It starts open, with its own empty
+// thread, and joins the frame the cursor is in. The yank stays held, so p
+// can paste again.
+func (m *Model) paste() {
+	if m.yank == nil {
+		m.msg = "nothing yanked — yy on a node first"
+		return
+	}
+	m.checkpoint()
+	now := time.Now()
+	nn := board.Node{ID: board.NewID(now), Title: m.yank.Title, URL: m.yank.URL, CreatedAt: now}
+	group := m.b.GroupAt(m.row, m.col)
+	if cur := m.selected(); cur != nil {
+		group = m.b.GroupOf(cur.ID)
+	}
+	m.b.Add(nn, m.row, m.col)
+	if group >= 0 {
+		m.b.Groups[group].Members = append(m.b.Groups[group].Members, nn.ID)
+	}
+	m.cursorTo(m.b.Node(nn.ID))
+	m.save()
+	if m.yankStrategy != "" && !m.stale {
+		if err := writeStrategyBody(m.dir, nn, m.yankStrategy); err != nil {
+			m.msg = "strategy: " + err.Error()
+		}
+	}
+}
+
 // keyMove slides the moving nodes as one block; the cursor rides along.
 func (m *Model) keyMove(k tea.KeyMsg) {
 	key := k.String()
@@ -944,6 +1033,13 @@ func (m *Model) keyMoveBreak(k tea.KeyMsg) tea.Cmd {
 			m.inputBreak = true
 			return m.startInput("break> ", br.Label)
 		}
+	case "x", "d":
+		// Erase the break; one undo brings it back where it was before M.
+		m.mode = modeNormal
+		m.b.RemoveBreak(m.row)
+		m.undo = append(m.undo, m.moveOrig)
+		m.redo = nil
+		m.save()
 	case "esc", "ctrl+c":
 		m.mode = modeNormal
 		m.b = m.moveOrig
@@ -1128,12 +1224,12 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - session break · M move / relabel break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
-	modeEdit:      "^s save · esc cancel · ⏎ new line",
-	modeMoveBreak: "jk move the session break · i edit label · ⏎ place · esc cancel",
+	modeEdit:      "esc save & close · ^c discard · ⏎ new line",
+	modeMoveBreak: "jk move the session break · i edit label · x delete · ⏎ place · esc cancel",
 	modeVisual:    "hjkl extend · = organize · m move together · g frame · u unframe · d delete · v block / V rows · esc cancel",
 }
 
@@ -1180,6 +1276,7 @@ func (m Model) View() string {
 		}
 		footer = dimStyle.Render(runewidth.Truncate(h, max(m.width-1, 1), "…"))
 	}
+	m.placeCaret(1 + len(body))
 	return header + "\n" + strings.Join(body, "\n") + "\n" + footer
 }
 
@@ -1204,6 +1301,11 @@ func (m Model) viewBoard() []string {
 		v.marked = setOf(m.visualIDs())
 	case modeMoveBreak:
 		v.movingBreak = true
+	case modeNormal:
+		if m.yank != nil && m.selectedFrame() == nil {
+			r, c := m.pasteCell()
+			v.ghost = &ghost{row: r, col: c, title: m.yank.Title}
+		}
 	}
 	cv := renderBoard(m.b, l, m.routes, v)
 	screen := newCanvas(cv.w, len(body))

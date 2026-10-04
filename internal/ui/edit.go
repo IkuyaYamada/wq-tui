@@ -102,18 +102,19 @@ func (m *Model) sizeEditor() {
 	}
 }
 
-// keyEdit types into the editor. ^s saves; Esc leaves, but asks once
-// before throwing away changes.
+// keyEdit types into the editor. Esc (or ^s) saves and leaves, as a note
+// app does; ^c leaves without saving, asking once before throwing away
+// changes.
 func (m *Model) keyEdit(k tea.KeyMsg) tea.Cmd {
 	switch k.String() {
-	case "ctrl+s":
+	case "esc", "ctrl+s":
 		m.saveEdit()
 		m.leaveEdit()
 		return nil
-	case "esc", "ctrl+c":
+	case "ctrl+c":
 		if m.edit.Value() != m.editOrig && !m.editWarned {
 			m.editWarned = true
-			m.msg = "unsaved changes — ^s save · esc again to discard"
+			m.msg = "unsaved changes — ^c again to discard · esc saves"
 			return nil
 		}
 		m.leaveEdit()

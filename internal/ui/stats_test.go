@@ -81,19 +81,19 @@ func TestEditInPreview(t *testing.T) {
 		t.Errorf("editor not drawn:\n%s", m.View())
 	}
 
-	// Esc on a change warns first; a second Esc throws it away.
-	m = press(t, m, "<esc>")
+	// ^c on a change warns first; a second ^c throws it away.
+	ctrlC := tea.KeyMsg{Type: tea.KeyCtrlC}
+	m = pressKey(m, ctrlC)
 	if m.mode != modeEdit || !strings.Contains(m.msg, "unsaved") {
-		t.Fatalf("first esc should warn: mode %v msg %q", m.mode, m.msg)
+		t.Fatalf("first ^c should warn: mode %v msg %q", m.mode, m.msg)
 	}
-	m = press(t, m, "<esc>")
+	m = pressKey(m, ctrlC)
 	if b, _ := os.ReadFile(strategy); m.mode != modeNormal || strings.Contains(string(b), "★") {
-		t.Fatalf("second esc should discard: mode %v\n%s", m.mode, b)
+		t.Fatalf("second ^c should discard: mode %v\n%s", m.mode, b)
 	}
 
-	// ^s saves the body and keeps the header, hand-added fields included.
-	m = press(t, m, "i", "★")
-	m = pressKey(m, ctrlS)
+	// Esc saves the body and keeps the header, hand-added fields included.
+	m = press(t, m, "i", "★", "<esc>")
 	want := "---\ntitle: 設計\nurl:\nowner: me\n---\n\n★スキーマから決める\n"
 	if b, _ := os.ReadFile(strategy); string(b) != want {
 		t.Errorf("strategy:\n%q\nwant\n%q", b, want)
@@ -166,5 +166,17 @@ func TestEditBoxKeepsThePreviewsHeight(t *testing.T) {
 	}
 	if after.h-2 < len(wrapLines([]pline{{strings.Repeat("長い説明の文です。", 12), stPlain}}, after.w-4))*4 {
 		t.Errorf("editor box %d lines cannot show the wrapped text", after.h)
+	}
+}
+
+func TestCtrlSStillSavesTheEditor(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = n.(Model)
+	m = press(t, m, "a", "設計", "<enter>", "K", "i", "メモ")
+	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlS})
+	if got := strategyBody(dir, *m.selected()); m.mode != modeNormal || got != "メモ" {
+		t.Errorf("mode %v strategy %q", m.mode, got)
 	}
 }

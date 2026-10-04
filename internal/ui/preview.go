@@ -131,19 +131,13 @@ func (p previewBox) draw(cv *canvas, title string, scroll int) {
 	}
 }
 
-// clearSpan blanks cells x0..x1-1 on line y, also blanking any wide rune
+// clearSpan blanks cells x0..x1-1 on line y; set blanks any wide rune
 // cut in half at either end.
 func (c *canvas) clearSpan(x0, x1, y int) {
 	if y < 0 || y >= c.h {
 		return
 	}
 	x0, x1 = max(x0, 0), min(x1, c.w)
-	if x0 > 0 && c.cells[y*c.w+x0].cont {
-		c.set(x0-1, y, ' ', stPlain)
-	}
-	if x1 < c.w && c.cells[y*c.w+x1].cont {
-		c.set(x1, y, ' ', stPlain)
-	}
 	for x := x0; x < x1; x++ {
 		c.set(x, y, ' ', stPlain)
 	}

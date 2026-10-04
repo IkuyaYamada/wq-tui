@@ -1046,3 +1046,111 @@ func TestHeaderNamesFrameAndNodeInFull(t *testing.T) {
 		t.Errorf("narrow: %q", header)
 	}
 }
+
+func TestYankAndPasteCopiesANode(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = n.(Model)
+	m = press(t, m, "a", "設計", "<enter>")
+	body := func(m Model) string { // the board alone: no breadcrumb, no footer message
+		lines := strings.Split(m.View(), "\n")
+		return strings.Join(lines[1:len(lines)-1], "\n")
+	}
+	src := m.selected()
+	src.URL = "https://example.com/x"
+	if err := writeStrategyBody(dir, *src, "まず読む"); err != nil {
+		t.Fatal(err)
+	}
+
+	if m = press(t, m, "p"); len(m.b.Nodes) != 1 {
+		t.Fatal("p with nothing yanked should do nothing")
+	}
+
+	// yy shows a ghost in the empty cell nearest the cursor; it follows
+	// the cursor, and p pastes there at once.
+	m = press(t, m, "y", "y")
+	if v := body(m); strings.Count(v, "設計") != 2 {
+		t.Fatalf("want the node and its ghost:\n%s", v)
+	}
+	m = press(t, m, "l", "l", "p")
+	if m.mode != modeNormal || len(m.b.Nodes) != 2 {
+		t.Fatalf("p should paste at once: mode %v, %d nodes", m.mode, len(m.b.Nodes))
+	}
+	cp := m.b.At(0, 2)
+	if cp == nil || cp.Title != "設計" || cp.URL != src.URL || cp.ID == src.ID || cp.Done {
+		t.Fatalf("copy %+v; board %v", cp, titles(m.b))
+	}
+	if got := strategyBody(dir, *cp); got != "まず読む" {
+		t.Errorf("copy's strategy %q", got)
+	}
+	if m.row != 0 || m.col != 2 {
+		t.Errorf("cursor at %d,%d, want on the copy", m.row, m.col)
+	}
+
+	// The yank stays held: p again lands next to the copy.
+	if m = press(t, m, "p"); len(m.b.Nodes) != 3 || m.b.At(0, 3) == nil {
+		t.Errorf("second p: %v", titles(m.b))
+	}
+
+	// One undo takes one paste back.
+	if m = press(t, m, "u"); len(m.b.Nodes) != 2 {
+		t.Errorf("undo left %d nodes", len(m.b.Nodes))
+	}
+
+	// Esc lets the yank go: no ghost, and p does nothing.
+	m = press(t, m, "<esc>")
+	if v := body(m); strings.Count(v, "設計") != 2 {
+		t.Errorf("the ghost should be gone:\n%s", v)
+	}
+	if m = press(t, m, "p"); len(m.b.Nodes) != 2 {
+		t.Errorf("p after esc pasted")
+	}
+}
+
+func TestDeleteSessionBreak(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "A", "<enter>", "o", "B", "<enter>", "o", "C", "<enter>", "g", "g")
+	m = press(t, m, "-", "昼", "<enter>")
+
+	// M then x: gone after moving it, and one undo brings it back where it
+	// was before M.
+	m = press(t, m, "M", "j", "x")
+	if m.mode != modeNormal || len(m.b.Breaks) != 0 {
+		t.Fatalf("mode %v breaks %+v", m.mode, m.b.Breaks)
+	}
+	m = press(t, m, "u")
+	if want := []board.Break{{After: 0, Label: "昼"}}; !reflect.DeepEqual(m.b.Breaks, want) {
+		t.Errorf("undo: %+v", m.b.Breaks)
+	}
+
+	// - on the row above a break also removes it.
+	m = press(t, m, "g", "g", "-")
+	if len(m.b.Breaks) != 0 || m.mode != modeNormal {
+		t.Errorf("- should remove: mode %v breaks %+v", m.mode, m.b.Breaks)
+	}
+}
+
+func TestCtrlJKInVimOpensNeighbour(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "a", "一", "<enter>", "o", "二", "<enter>")
+	second := *m.selected()
+	m = press(t, m, "k")
+	first := *m.selected()
+
+	next, cmd := m.Update(editorDoneMsg{id: first.ID, step: 1})
+	m = next.(Model)
+	if m.selected().ID != second.ID || cmd == nil {
+		t.Fatalf("C-j should move to and open %s, at %v cmd %v", second.Title, m.selected(), cmd != nil)
+	}
+	next, _ = m.Update(editorDoneMsg{id: second.ID, step: 1})
+	m = next.(Model)
+	if m.selected().ID != second.ID || m.msg != "no next node" {
+		t.Errorf("past the last node should stay on the board: %q", m.msg)
+	}
+	next, cmd = m.Update(editorDoneMsg{id: second.ID, step: -1})
+	m = next.(Model)
+	if m.selected().ID != first.ID || cmd == nil {
+		t.Errorf("C-k should move to and open %s", first.Title)
+	}
+}

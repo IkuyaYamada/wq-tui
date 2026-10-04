@@ -2,6 +2,8 @@ package ui
 
 import (
 	_ "embed"
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,11 +18,34 @@ import (
 //go:embed wq.vim
 var nodeVimScript []byte
 
-// editorDoneMsg reports that the vim session on a node has ended.
+// editorDoneMsg reports that the vim session on a node has ended. step is
+// 1 or -1 when vim was left with C-j / C-k to open the next or previous node.
 type editorDoneMsg struct {
 	id       string
 	strategy string
+	step     int
 	err      error
+}
+
+// Exit codes wq.vim leaves with on C-j / C-k (after saving everything).
+const (
+	exitNextNode = 3
+	exitPrevNode = 4
+)
+
+// exitStep turns vim's exit status into a step to the next (1) or previous
+// (-1) node, clearing err when it only carried that request.
+func exitStep(err error) (int, error) {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		switch ee.ExitCode() {
+		case exitNextNode:
+			return 1, nil
+		case exitPrevNode:
+			return -1, nil
+		}
+	}
+	return 0, err
 }
 
 // strategyPath makes sure the node's directory exists and that strategy.md
@@ -47,6 +72,14 @@ func vimScriptPath() (string, error) {
 	path := filepath.Join(dir, "wq.vim")
 	return path, os.WriteFile(path, nodeVimScript, 0o644)
 }
+
+// vimCmd runs vim on the terminal itself: given the wrapped output, a
+// plain exec.Cmd would put a pipe in between and vim would not draw.
+type vimCmd struct{ *exec.Cmd }
+
+func (c vimCmd) SetStdin(r io.Reader)  { c.Stdin = r }
+func (c vimCmd) SetStdout(w io.Writer) { c.Stdout = tty(w) }
+func (c vimCmd) SetStderr(w io.Writer) { c.Stderr = w }
 
 // vimString quotes s as a single-quoted Vim string.
 func vimString(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
@@ -79,10 +112,11 @@ func openNode(dir string, n board.Node) tea.Cmd {
 		"-S", script,
 		strategy,
 	)
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
+	return tea.Exec(vimCmd{cmd}, func(err error) tea.Msg {
+		step, err := exitStep(err)
 		if derr := thread.DropBlank(nodeDir); err == nil {
 			err = derr
 		}
-		return editorDoneMsg{id: n.ID, strategy: strategy, err: err}
+		return editorDoneMsg{id: n.ID, strategy: strategy, step: step, err: err}
 	})
 }

@@ -150,7 +150,9 @@ const (
 	stFrame
 	stFrameLit
 	stEdge
-	stEdgeHL
+	stEdgeDim
+	stEdgeIn
+	stEdgeOut
 	stDot
 )
 
@@ -173,7 +175,9 @@ var styles = map[style]lipgloss.Style{
 	stFrame:         lipgloss.NewStyle().Foreground(lipgloss.Color("97")),
 	stFrameLit:      lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true),
 	stEdge:          lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-	stEdgeHL:        lipgloss.NewStyle().Foreground(lipgloss.Color("247")), // a notch above stEdge
+	stEdgeDim:       lipgloss.NewStyle().Foreground(lipgloss.Color("237")), // the rest, while a node's edges are lit
+	stEdgeIn:        lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true),
+	stEdgeOut:       lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true),
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 }
 
@@ -196,19 +200,29 @@ func newCanvas(w, h int) *canvas {
 	return c
 }
 
+// set writes one narrow rune. A wide rune it cuts in half loses its other
+// half too, or the rest of the line would shift by a cell.
 func (c *canvas) set(x, y int, r rune, st style) {
 	if x < 0 || y < 0 || x >= c.w || y >= c.h {
 		return
 	}
-	c.cells[y*c.w+x] = cell{r: r, st: st}
+	i := y*c.w + x
+	if c.cells[i].cont && x > 0 {
+		c.cells[i-1] = cell{r: ' ', st: c.cells[i-1].st}
+	}
+	if x+1 < c.w && c.cells[i+1].cont {
+		c.cells[i+1] = cell{r: ' ', st: c.cells[i+1].st}
+	}
+	c.cells[i] = cell{r: r, st: st}
 }
 
 func (c *canvas) text(x, y int, s string, st style) {
 	for _, r := range s {
 		w := runewidth.RuneWidth(r)
 		c.set(x, y, r, st)
-		if w == 2 && x+1 < c.w {
-			c.cells[y*c.w+x+1] = cell{cont: true, st: st}
+		if w == 2 && x+1 < c.w && y >= 0 && y < c.h && x >= 0 {
+			c.set(x+1, y, ' ', st)
+			c.cells[y*c.w+x+1].cont = true
 		}
 		x += w
 	}
@@ -348,27 +362,76 @@ func drawRect(cv *canvas, f frame, st style, heavy bool) {
 	cv.set(f.x1, f.y0, r[2], st)
 	cv.set(f.x0, f.y1, r[4], st)
 	cv.set(f.x1, f.y1, r[5], st)
-	title, progress := f.labels()
-	if title != "" {
-		cv.text(f.x0+2, f.y0, title, st)
+}
+
+// drawFrameLabels writes a frame's progress at the right end of its top
+// line and its title at the left, after the edges, into stretches no edge
+// crosses (bits marks edge cells). A title that does not fit before the
+// first crossing takes the first stretch it fits in, on the top line or
+// else the bottom one, or failing that the widest, cut short; the header's
+// breadcrumb still names it in full.
+func drawFrameLabels(cv *canvas, f frame, st style, bits []uint8) {
+	if f.y0 < 0 || f.y1 >= cv.h {
+		return
 	}
-	if progress != "" {
-		cv.text(f.x1-1-runewidth.StringWidth(progress), f.y0, progress, st)
+	free := func(x, y int) bool { return x >= 0 && x < cv.w && bits[y*cv.w+x] == 0 }
+	end := f.x1 - 1 // labels stay clear of the corners
+	if p := f.progress(); p != "" {
+		pw := runewidth.StringWidth(p)
+		ok := true
+		for x := end - pw; x < end; x++ {
+			ok = ok && free(x, f.y0)
+		}
+		if ok {
+			cv.text(end-pw, f.y0, p, st)
+			end -= pw
+		}
+	}
+	if f.title == "" {
+		return
+	}
+	// Each label keeps a cell of line on either side, so it reads as part
+	// of the frame.
+	full := runewidth.StringWidth(f.title) + 4
+	type stretch struct{ x0, x1, y int }
+	var best stretch
+	for _, y := range []int{f.y0, f.y1} {
+		lineEnd := end
+		if y == f.y1 {
+			lineEnd = f.x1 - 1
+		}
+		for x := f.x0 + 1; x < lineEnd; x++ {
+			if !free(x, y) {
+				continue
+			}
+			s := stretch{x, x, y}
+			for s.x1 < lineEnd && free(s.x1, y) {
+				s.x1++
+			}
+			if s.x1-s.x0 >= full {
+				best = s
+				goto draw
+			}
+			if s.x1-s.x0 > best.x1-best.x0 {
+				best = s
+			}
+			x = s.x1
+		}
+	}
+draw:
+	if room := best.x1 - best.x0 - 4; room >= 1 {
+		cv.text(best.x0+1, best.y, " "+runewidth.Truncate(f.title, room, "…")+" ", st)
 	}
 }
 
-// labels are the texts on a frame's top line: its title on the left and
-// its progress on the right, each "" when there is no room.
-func (f frame) labels() (title, progress string) {
-	progress = fmt.Sprintf(" %d/%d ", f.done, f.total)
-	pw := runewidth.StringWidth(progress)
-	if f.x1-f.x0 <= pw+3 {
-		progress, pw = "", 0
+// progress is the done count on a frame's top line, "" when there is no
+// room for it.
+func (f frame) progress() string {
+	p := fmt.Sprintf(" %d/%d ", f.done, f.total)
+	if f.x1-f.x0 <= runewidth.StringWidth(p)+3 {
+		return ""
 	}
-	if room := f.x1 - f.x0 - 3 - pw; f.title != "" && room > 4 {
-		title = " " + runewidth.Truncate(f.title, room-3, "…") + " "
-	}
-	return title, progress
+	return p
 }
 
 // drawBreaks draws each session break as a dotted line on its own line under
@@ -451,6 +514,19 @@ func edgeRune(bits uint8) rune {
 	}
 }
 
+// edgeRuneHeavy is edgeRune in heavy lines, for the lit node's edges.
+func edgeRuneHeavy(bits uint8) rune {
+	light := []rune("│─┌┐└┘├┤┬┴┼")
+	heavy := []rune("┃━┏┓┗┛┣┫┳┻╋")
+	r := edgeRune(bits)
+	for i, l := range light {
+		if l == r {
+			return heavy[i]
+		}
+	}
+	return r
+}
+
 const (
 	bitU uint8 = 1 << iota
 	bitD
@@ -470,6 +546,13 @@ type view struct {
 	movingBreak          bool            // the break under cursorRow is being moved
 	frameSel             string          // the selected frame; no card is then the cursor
 	stats                map[string]nodeStats
+	ghost                *ghost // where p would paste the yanked node
+}
+
+// ghost is a not-yet-pasted copy, drawn dashed and dim in an empty cell.
+type ghost struct {
+	row, col int
+	title    string
 }
 
 // renderBoard draws every card, the cursor and the routed edges.
@@ -483,11 +566,13 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		}
 	}
 	cur := b.At(v.cursorRow, v.cursorCol)
-	for _, f := range l.frames {
+	frameSt := make([]style, len(l.frames))
+	for i, f := range l.frames {
 		st, heavy := stFrame, f.id != "" && f.id == v.frameSel
 		if heavy || (cur != nil && f.members[cur.ID]) {
 			st = stFrameLit
 		}
+		frameSt[i] = st
 		drawRect(cv, f, st, heavy)
 	}
 	onCursor := false
@@ -516,53 +601,90 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	if !onCursor && v.cursorRow >= 0 && v.cursorRow < len(l.rowY) {
 		drawFrame(cv, l, v.cursorRow, v.cursorCol, frameDashed, v.cursorSt)
 	}
+	if g := v.ghost; g != nil && g.row >= 0 && g.row < len(l.rowY) {
+		border := stBorderMove
+		if g.row == v.cursorRow && g.col == v.cursorCol {
+			border = v.cursorSt
+		}
+		drawFrame(cv, l, g.row, g.col, frameDashed, border)
+		x, y := l.colX(g.col), l.rowY[g.row]
+		for i, line := range titleRows(g.title, l.cardW-4) {
+			cv.text(x+2, y+1+i, line, stPreviewDim)
+		}
+	}
 
+	// Every edge adds its connections to bits. The lit node's edges also
+	// keep their own in litBits, so where they share cells with others
+	// they are drawn heavy, in their own shape and color, and can be
+	// followed through: incoming (from predecessors) and outgoing apart.
 	bits := make([]uint8, cv.w*cv.h)
-	hl := make([]bool, cv.w*cv.h)
+	litBits := make([]uint8, cv.w*cv.h)
+	litSt := make([]style, cv.w*cv.h)
+	base := stEdge
+	if v.lit != "" {
+		base = stEdgeDim
+	}
 	for _, rt := range routes {
-		lit := v.lit != "" && (rt.from == v.lit || rt.to == v.lit)
-		st := stEdge
-		if lit {
-			st = stEdgeHL
+		st := base
+		switch {
+		case v.lit == "":
+		case rt.from == v.lit:
+			st = stEdgeOut
+		case rt.to == v.lit:
+			st = stEdgeIn
+		}
+		lit := st != base
+		add := func(k int, bit uint8) {
+			bits[k] |= bit
+			if lit {
+				litBits[k] |= bit
+				if litSt[k] != stEdgeOut { // outgoing wins where the two cross
+					litSt[k] = st
+				}
+			}
 		}
 		for i, p := range rt.path {
 			k := p.y*cv.w + p.x
 			if i == 0 {
-				bits[k] |= bitU
+				add(k, bitU)
 			}
 			if i == len(rt.path)-1 {
-				bits[k] |= bitD
+				add(k, bitD)
 			}
 			if i > 0 {
 				q := rt.path[i-1]
 				kq := q.y*cv.w + q.x
 				switch {
 				case q.y < p.y:
-					bits[kq] |= bitD
-					bits[k] |= bitU
+					add(kq, bitD)
+					add(k, bitU)
 				case q.x < p.x:
-					bits[kq] |= bitR
-					bits[k] |= bitL
+					add(kq, bitR)
+					add(k, bitL)
 				default:
-					bits[kq] |= bitL
-					bits[k] |= bitR
+					add(kq, bitL)
+					add(k, bitR)
 				}
 			}
-			hl[k] = hl[k] || lit
 		}
-		cv.set(rt.srcPort.x, rt.srcPort.y, '┬', st)
+		port := '┬'
+		if lit {
+			port = '┰'
+		}
+		cv.set(rt.srcPort.x, rt.srcPort.y, port, st)
 		cv.set(rt.dstPort.x, rt.dstPort.y, '▼', st)
 	}
 	drawBreakLabels(cv, l, b.Breaks, bits)
+	for i, f := range l.frames {
+		drawFrameLabels(cv, f, frameSt[i], bits)
+	}
 	for k, v := range bits {
-		if v == 0 {
-			continue
+		switch {
+		case litBits[k] != 0:
+			cv.set(k%cv.w, k/cv.w, edgeRuneHeavy(litBits[k]), litSt[k])
+		case v != 0:
+			cv.set(k%cv.w, k/cv.w, edgeRune(v), base)
 		}
-		st := stEdge
-		if hl[k] {
-			st = stEdgeHL
-		}
-		cv.cells[k] = cell{r: edgeRune(v), st: st}
 	}
 	return cv
 }

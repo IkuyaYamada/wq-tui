@@ -35,7 +35,10 @@ func main() {
 	if os.Getenv("WQ_IME") != "off" {
 		opts = append(opts, ui.WithIME(ime.System{}))
 	}
-	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen()).Run(); err != nil {
+	caret := &ui.Caret{}
+	opts = append(opts, ui.WithCaret(caret))
+	out := ui.CaretOutput{File: os.Stdout, C: caret}
+	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen(), tea.WithOutput(out)).Run(); err != nil {
 		fail(err)
 	}
 }

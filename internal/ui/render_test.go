@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mattn/go-runewidth"
+
 	"github.com/IkuyaYamada/wq-tui/internal/board"
 )
 
@@ -148,5 +150,48 @@ func TestBreakGetsItsOwnLineEdgesOnlyCross(t *testing.T) {
 	}
 	if !strings.Contains(plain(cv), "昼休み") {
 		t.Error("label missing")
+	}
+}
+
+func TestSetOverWideRuneKeepsLineWidth(t *testing.T) {
+	for _, x := range []int{2, 3} { // left half, then right half of "シ"
+		cv := newCanvas(10, 1)
+		cv.text(0, 0, "マシン", stPlain)
+		cv.set(x, 0, '│', stPlain)
+		if got := runewidthOf(plain(cv)); got != 10 {
+			t.Errorf("x=%d: line is %d cells wide, want 10: %q", x, got, plain(cv))
+		}
+	}
+}
+
+func runewidthOf(s string) int {
+	return runewidth.StringWidth(strings.TrimSuffix(s, "\n"))
+}
+
+func TestFrameTitleDodgesEdges(t *testing.T) {
+	n := func(id, title string, row, col int) board.Node {
+		return board.Node{ID: id, Title: title, Row: row, Col: col}
+	}
+	b := &board.Board{
+		Nodes: []board.Node{
+			n("a", "前提A", 0, 0), n("b", "前提B", 0, 1),
+			n("c", "設計書のレビューが終わっている", 1, 0),
+		},
+		Edges:  []board.Edge{{From: "a", To: "c"}, {From: "b", To: "c"}},
+		Groups: []board.Group{{ID: "g", Title: "レビュー準備作業", Members: []string{"c"}}},
+	}
+	l := newLayout(b, 120)
+	cv := renderBoard(b, l, routeEdges(b, l), view{cursorRow: -1})
+	out := plain(cv)
+	t.Log("\n" + out)
+	for y := 0; y < cv.h; y++ {
+		if w := runewidthOf(strings.Split(out, "\n")[y]); w != cv.w {
+			t.Errorf("line %d is %d cells wide, want %d", y, w, cv.w)
+		}
+	}
+	f := l.frames[0]
+	lines := strings.Split(out, "\n")
+	if !strings.Contains(lines[f.y0]+lines[f.y1], " レビュー準") {
+		t.Errorf("frame title missing or cut by an edge")
 	}
 }

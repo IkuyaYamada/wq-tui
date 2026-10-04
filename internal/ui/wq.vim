@@ -5,8 +5,9 @@
 " In the index, Enter opens the entry under the cursor in the same pane and
 " Esc in that entry (normal mode) saves it and comes back to the index. a adds
 " an entry, D deletes one, - shows the index from anywhere, C-w w switches
-" panes, and q saves everything and returns to wq. g:wq_thread_dir (the
-" node's thread/ directory) must be set first.
+" panes, and q saves everything and returns to wq. C-j / C-k save everything
+" too and open the next / previous node, as w / b would pick it on the board.
+" g:wq_thread_dir (the node's thread/ directory) must be set first.
 
 if !exists('g:wq_thread_dir')
   finish
@@ -15,6 +16,9 @@ let s:dir = fnamemodify(g:wq_thread_dir, ':p:s?/$??')
 let s:last = ''  " entry most recently opened; marked ▸ in the index
 set hidden
 nnoremap <silent> q :wqa<CR>
+" The exit codes tell wq which way to go; keep them in step with editor.go.
+nnoremap <silent> <C-j> :wa <Bar> cquit 3<CR>
+nnoremap <silent> <C-k> :wa <Bar> cquit 4<CR>
 nnoremap <silent> - :call <SID>show_index()<CR>
 
 " Entries sort by file stem so "…-152003" comes before "…-152003-02".
@@ -144,7 +148,7 @@ endfunction
 
 " ── layout ───────────────────────────────────────────────────────────────
 let s:strategy_win = win_getid()
-setlocal statusline=\ strategy%m%=q\ save\ &\ back\ 
+setlocal statusline=\ strategy%m%=C-j/C-k\ next/prev\ ·\ q\ save\ &\ back\ 
 
 rightbelow vnew
 let s:thread_win = win_getid()
