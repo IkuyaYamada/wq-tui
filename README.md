@@ -43,7 +43,8 @@ Data lives in `~/wq` (override with `WQ_DIR`):
 ~/wq/nodes/<id>/thread/20261001-152003.md   # one file per thread entry
 ```
 
-Plain files, so the directory can be a git repo of its own.
+Plain files, so the directory can be a git repo of its own; see
+[Backup and other machines](#backup-and-other-machines).
 
 ## Keys
 
@@ -177,6 +178,56 @@ wq is meant to grow while in use, so an older build is often still open next
 to a newer one. Fields in board.json that a build does not know are kept and
 written back unchanged, so an older wq never strips what a newer one added.
 (Builds from before this change do drop them; restart those once.)
+
+## Backup and other machines
+
+Everything wq knows is in the data directory (`~/wq`, or `WQ_DIR`):
+`board.json` and `nodes/`. Nothing else needs copying; the vim layout script
+in the user cache directory is rewritten every time a node opens. Copy the
+directory and you have a backup; share it and another machine picks up where
+you left off.
+
+A private git repository works well: the files are small plain text, so
+history and diffs are readable. The board is your own work, so keep the
+repository **private**.
+
+First machine, once:
+
+```sh
+cd ~/wq
+git init
+printf 'board.json.tmp\n.DS_Store\n' > .gitignore   # board.json.tmp only exists mid-save
+git add -A && git commit -m "wq board"
+gh repo create wq-data --private --source=. --push
+```
+
+Another machine, once: build wq as in [Run](#run), then
+
+```sh
+gh repo clone <you>/wq-data ~/wq   # or anywhere, with WQ_DIR pointing there
+```
+
+and set the same `WQ_VIM` / `WQ_IME` there if you use them.
+
+Each session, on whichever machine:
+
+```sh
+cd ~/wq && git pull           # before starting wq
+wq
+cd ~/wq && git add -A && git commit -m sync && git push   # after quitting it
+```
+
+Work on one machine at a time. The `⟳ changed in another wq` check only sees
+other wq processes on the same disk; it cannot see a commit waiting on
+another machine. If you forget to pull and both sides changed `board.json`,
+git reports a conflict on pull: keep one side (`git checkout --theirs
+board.json` or `--ours`) and redo the few moves by hand, since a hand-merged
+board.json can easily end up with two nodes in one cell. Strategy and thread
+files rarely conflict, as each entry is its own file.
+
+A synced folder (iCloud Drive, Dropbox) also works for one person, but on a
+conflict it quietly writes a "conflicted copy" of board.json that wq never
+reads, so changes can go missing unnoticed; git makes the conflict visible.
 
 ## Rules
 
