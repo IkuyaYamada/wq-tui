@@ -13,6 +13,18 @@ mise install        # Go toolchain (see mise.toml)
 go build -o wq . && ./wq   # mise.toml sets CGO_ENABLED=0
 ```
 
+To run it as `wq` from anywhere, link the binary into a directory on your
+`PATH` (`~/.local/bin` here; any will do). A link rather than a copy, so
+every `go build` takes effect without installing again:
+
+```sh
+mkdir -p ~/.local/bin && ln -sf "$PWD/wq" ~/.local/bin/wq
+```
+
+If `wq` is still not found, add `~/.local/bin` to `PATH` in your shell's rc
+file and open a new shell. (Ubuntu's `~/.profile` adds it by itself once the
+directory exists.)
+
 ### Windows
 
 Run it in WSL (Ubuntu or similar), from Windows Terminal:
@@ -22,7 +34,8 @@ sudo apt install -y git vim curl
 curl https://mise.run | sh          # then follow its hint to activate mise
 git clone https://github.com/IkuyaYamada/wq-tui.git && cd wq-tui
 mise trust && mise install           # apt's Go is too old for go.mod
-go build -o wq . && ./wq
+go build -o wq .
+mkdir -p ~/.local/bin && ln -sf "$PWD/wq" ~/.local/bin/wq   # then wq, in a new shell
 ```
 
 Keep the data in the Linux home (`~/wq`), not under `/mnt/c`: it is much
