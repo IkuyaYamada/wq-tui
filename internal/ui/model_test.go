@@ -1154,3 +1154,26 @@ func TestCtrlJKInVimOpensNeighbour(t *testing.T) {
 		t.Errorf("C-k should move to and open %s", first.Title)
 	}
 }
+
+func TestYPCopiesStrategyPath(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	var copied []string
+	m.copyText = func(s string) error { copied = append(copied, s); return nil }
+	m = press(t, m, "a", "設計", "<enter>", "y", "p")
+	want := filepath.Join(board.NodeDir(dir, m.b.Nodes[0].ID), "strategy.md")
+	if len(copied) != 1 || copied[0] != want {
+		t.Fatalf("copied %v, want %s", copied, want)
+	}
+	if _, err := os.Stat(want); err != nil {
+		t.Errorf("yp should write strategy.md so the path opens: %v", err)
+	}
+	if m.yank != nil {
+		t.Errorf("yp is not yy: nothing should be held for p")
+	}
+	// On an empty cell there is nothing to copy.
+	m = press(t, m, "l", "y", "p")
+	if len(copied) != 1 {
+		t.Errorf("empty cell copied %v", copied)
+	}
+}

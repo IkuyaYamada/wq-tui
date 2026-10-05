@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 
@@ -11,10 +13,13 @@ import (
 )
 
 // nodeStats is how much has been written on a node: characters in the
-// strategy body and thread entries written by hand.
+// strategy body and thread entries written by hand, and the strategy's
+// task list: checkboxes, and how many of them are ticked.
 type nodeStats struct {
 	chars   int
 	entries int
+	checks  int
+	checked int
 }
 
 // readStats counts a node's writing without touching its files (no thread
@@ -33,6 +38,7 @@ func readStats(dir, id string) nodeStats {
 				s.chars++
 			}
 		}
+		s.checks, s.checked = countChecks(body)
 	}
 	files, _ := filepath.Glob(filepath.Join(thread.Dir(nodeDir), "*.md"))
 	for _, f := range files {
@@ -43,6 +49,40 @@ func readStats(dir, id string) nodeStats {
 		s.entries++
 	}
 	return s
+}
+
+// checkItem is a Markdown task list item: "- [ ]", "* [x]", "1. [X]", at
+// any depth.
+var checkItem = regexp.MustCompile(`^\s*(?:[-*+]|\d+[.)])\s+\[([ xX])\]`)
+
+// countChecks counts the task list items in a Markdown body and the ticked
+// ones among them, leaving out fenced code blocks.
+func countChecks(body string) (checks, checked int) {
+	fenced := false
+	for _, line := range strings.Split(body, "\n") {
+		if t := strings.TrimSpace(line); strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fenced = !fenced
+			continue
+		}
+		if fenced {
+			continue
+		}
+		if m := checkItem.FindStringSubmatch(line); m != nil {
+			checks++
+			if m[1] != " " {
+				checked++
+			}
+		}
+	}
+	return checks, checked
+}
+
+// progress is the task list's " done/total " label, or "" without one.
+func (s nodeStats) progress() string {
+	if s.checks == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" %d/%d ", s.checked, s.checks)
 }
 
 // isLogEntry reports whether body is a line wq wrote on completing or

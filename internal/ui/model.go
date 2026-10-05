@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/aymanbagabas/go-osc52/v2"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -78,6 +80,7 @@ type Model struct {
 	pendingZ       bool   // first z of zz / zt / zb was pressed
 
 	openURL  func(string) error // opens a node's url; swapped out in tests
+	copyText func(string) error // puts text on the clipboard; swapped out in tests
 	connFrom string
 
 	width, height int
@@ -126,7 +129,7 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	ti := textinput.New()
 	ti.Prompt = "title> "
 	ti.CharLimit = 200
-	m := Model{dir: dir, b: b, input: ti, width: 120, height: 40, ime: ime.Noop{}, openURL: openInBrowser}
+	m := Model{dir: dir, b: b, input: ti, width: 120, height: 40, ime: ime.Noop{}, openURL: openInBrowser, copyText: copyToClipboard}
 	for _, o := range opts {
 		o(&m)
 	}
@@ -239,7 +242,7 @@ var readOnlyKeys = map[string]bool{
 	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
 	"ctrl+d": true, "ctrl+u": true, "ctrl+e": true, "ctrl+y": true,
 	"z": true, "t": true, // scrolling (zz / zt / zb)
-	"y": true, // yy only copies; p waits for R
+	"y": true, // yy and yp only copy; p waits for R
 	"K": true, // preview
 }
 
@@ -351,7 +354,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.reload()
 				break
 			}
-			if m.checkStale() && (!readOnlyKeys[key] || (key == "x" && !m.pendingG)) {
+			if m.checkStale() && (!readOnlyKeys[key] && !(key == "p" && m.pendingY) || (key == "x" && !m.pendingG)) {
 				m.pendingD, m.pendingY = false, false
 				m.msg = staleMsg
 				break
@@ -418,6 +421,60 @@ func (m *Model) openNodeURL() {
 			m.msg = "opened " + n.URL
 		}
 	}
+}
+
+// yankPath puts the absolute path of the strategy.md under the cursor (the
+// frame's when one is selected) on the clipboard, writing the file first
+// unless the board is stale.
+func (m *Model) yankPath() {
+	n := m.focus()
+	if n == nil {
+		return
+	}
+	path := filepath.Join(board.NodeDir(m.dir, n.ID), "strategy.md")
+	if !m.stale {
+		if _, err := strategyPath(m.dir, *n); err != nil {
+			m.msg = "yp: " + err.Error()
+			return
+		}
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	if err := m.copyText(path); err != nil {
+		m.msg = "yp: " + err.Error()
+		return
+	}
+	m.msg = "copied " + path
+}
+
+// copyToClipboard hands text to the system clipboard tool, or failing
+// that to the terminal as an OSC 52 sequence (which also reaches the local
+// clipboard over ssh in terminals that allow it).
+func copyToClipboard(text string) error {
+	var tools [][]string
+	switch {
+	case runtime.GOOS == "darwin":
+		tools = [][]string{{"pbcopy"}}
+	case runtime.GOOS == "windows" || os.Getenv("WSL_DISTRO_NAME") != "":
+		tools = [][]string{{"clip.exe"}}
+	default:
+		tools = [][]string{{"wl-copy"}, {"xclip", "-selection", "clipboard"}, {"xsel", "--clipboard", "--input"}}
+	}
+	if os.Getenv("SSH_TTY") == "" {
+		for _, t := range tools {
+			if _, err := exec.LookPath(t[0]); err != nil {
+				continue
+			}
+			cmd := exec.Command(t[0], t[1:]...)
+			cmd.Stdin = strings.NewReader(text)
+			if err := cmd.Run(); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := fmt.Fprint(os.Stdout, osc52.New(text))
+	return err
 }
 
 // openInBrowser hands url to the system opener; a bare host gets https://.
@@ -520,8 +577,11 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	}
 	if m.pendingY {
 		m.pendingY = false
-		if key == "y" {
+		switch key {
+		case "y":
 			m.yankNode()
+		case "p":
+			m.yankPath()
 		}
 		return nil
 	}
@@ -1224,7 +1284,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",

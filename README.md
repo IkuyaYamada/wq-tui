@@ -75,6 +75,7 @@ Plain files, so the directory can be a git repo of its own; see
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
 | `yy` / `p` | Copy the node under the cursor: a dashed ghost then shows where it would go (the empty cell nearest the cursor) and follows the cursor; `p` pastes a copy there (title, url and strategy; open, no edges, its own thread) and moves onto it. The copy stays held for more `p`; `Esc` lets it go |
+| `yp` | Copy the absolute path of the strategy.md under the cursor (the frame's when one is selected) to the clipboard: pbcopy / clip.exe / wl-copy / xclip / xsel, or OSC 52 over ssh or when none is found. Works on a stale board too |
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it, `=` organizes it |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
 | `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), logs `Completed: <comment>` to the thread and shows the comment in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away (`Reopened`) and drops the comment |

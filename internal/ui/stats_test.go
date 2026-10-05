@@ -180,3 +180,37 @@ func TestCtrlSStillSavesTheEditor(t *testing.T) {
 		t.Errorf("mode %v strategy %q", m.mode, got)
 	}
 }
+
+func TestCountChecks(t *testing.T) {
+	body := "方針\n- [ ] 読む\n- [x] 書く\n  * [X] 入れ子\n1. [ ] 番号付き\n-[ ] 空白なし\n```\n- [x] コードの中\n```\n- 普通の項目\n"
+	if c, d := countChecks(body); c != 4 || d != 2 {
+		t.Errorf("countChecks = %d/%d, want 2 ticked of 4", d, c)
+	}
+	if p := (nodeStats{}).progress(); p != "" {
+		t.Errorf("no task list should give no label: %q", p)
+	}
+}
+
+func TestChecksOnCards(t *testing.T) {
+	dir := t.TempDir()
+	b := &board.Board{Nodes: []board.Node{{ID: "a", Title: "設計"}, {ID: "b", Title: "実装", Col: 1, URL: "https://example.com"}, {ID: "c", Title: "確認", Col: 2}}}
+	for id, body := range map[string]string{"a": "- [x] 読む\n- [ ] 書く\n", "b": "- [x] 読む\n"} {
+		nodeDir := board.NodeDir(dir, id)
+		os.MkdirAll(nodeDir, 0o755)
+		os.WriteFile(filepath.Join(nodeDir, "strategy.md"), []byte("---\ntitle: x\n---\n\n"+body), 0o644)
+	}
+	m := New(dir, b)
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
+	m = n.(Model)
+	view := m.View()
+	t.Log("\n" + view)
+	if !strings.Contains(view, " 1/2 ━┓") {
+		t.Errorf("a's card (under the cursor) should show 1/2 at its top right")
+	}
+	if !strings.Contains(view, " 1/1 ↗─╮") {
+		t.Errorf("b's card should show 1/1 before its link mark")
+	}
+	if !strings.Contains(view, "↗─╮  ╭────────────────╮") {
+		t.Errorf("c has no task list and no label")
+	}
+}

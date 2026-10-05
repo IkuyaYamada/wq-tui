@@ -147,6 +147,8 @@ const (
 	stPreviewDim
 	stPreviewWhen
 	stMeter
+	stChecks
+	stChecksDone
 	stFrame
 	stFrameLit
 	stEdge
@@ -172,6 +174,8 @@ var styles = map[style]lipgloss.Style{
 	stPreviewDim:    lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
 	stPreviewWhen:   lipgloss.NewStyle().Foreground(lipgloss.Color("108")).Bold(true),
 	stMeter:         lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
+	stChecks:        lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
+	stChecksDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
 	stFrame:         lipgloss.NewStyle().Foreground(lipgloss.Color("97")),
 	stFrameLit:      lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true),
 	stEdge:          lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
@@ -321,8 +325,22 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 			cv.set(x+1+i, y+cardH-1, r, stMeter)
 		}
 	}
+	end := x + w - 1 // the task list's progress ends before the corner
 	if n.URL != "" {
 		cv.set(x+w-3, y, '↗', border) // has a link: gx opens it
+		end = x + w - 3
+	} else {
+		end--
+	}
+	// The strategy's task list, as "done/total" at the top border's right
+	// end, dimmed once every box is ticked. Incoming edges drawn later win
+	// where they land on it.
+	if p := st.progress(); p != "" && runewidth.StringWidth(p) <= w-4 {
+		ps := stChecks
+		if st.checked == st.checks {
+			ps = stChecksDone
+		}
+		cv.text(end-runewidth.StringWidth(p), y, p, ps)
 	}
 	label := n.Title
 	if n.Done {
