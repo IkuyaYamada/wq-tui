@@ -70,8 +70,11 @@ again (like closing and opening a fold in vim), through three steps:
 | slim | 3 lines | the title in the top border, meters on the bottom one |
 | compact | 2 lines | a one-line band |
 
-The step lasts until wq quits. `wqc` starts in compact; it is the same
-binary linked under another name (or run with `WQ_COMPACT=1`):
+The next wq starts at the step you left it at. It is a setting of the
+machine, not of the board, so it lives outside the data directory, in
+`~/Library/Application Support/wq/density` on macOS (`~/.config/wq/density`
+on Linux). `wqc` always starts in compact; it is the same binary linked
+under another name (or run with `WQ_COMPACT=1`):
 
 ```sh
 ln -sf "$PWD/wq" ~/.local/bin/wqc

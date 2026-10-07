@@ -1271,4 +1271,15 @@ func TestZcZoStepCardDensity(t *testing.T) {
 	if m.density != densityFull {
 		t.Errorf("zo back to full: %v", m.density)
 	}
+
+	// The density is handed over to be kept, and a saved one is picked up.
+	var saved []string
+	m = New(t.TempDir(), &board.Board{}, WithDensity("slim"), WithDensitySaver(func(s string) { saved = append(saved, s) }))
+	if m.density != densitySlim {
+		t.Errorf("WithDensity: %v", m.density)
+	}
+	m = press(t, m, "z", "c", "z", "c")
+	if strings.Join(saved, ",") != "compact" {
+		t.Errorf("saved %v: once, and not when nothing changed", saved)
+	}
 }

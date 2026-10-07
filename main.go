@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -32,8 +33,19 @@ func main() {
 		fail(err)
 	}
 	var opts []ui.Option
-	// Run as wqc (a link to the same binary) or with WQ_COMPACT=1 for the
-	// compact board: one-line cards.
+	// Cards start at the density zc / zo last left them at on this
+	// machine, or compact when run as wqc (a link to the same binary) or
+	// with WQ_COMPACT=1.
+	if path := densityFile(); path != "" {
+		if data, err := os.ReadFile(path); err == nil {
+			opts = append(opts, ui.WithDensity(strings.TrimSpace(string(data))))
+		}
+		opts = append(opts, ui.WithDensitySaver(func(name string) {
+			if os.MkdirAll(filepath.Dir(path), 0o755) == nil {
+				_ = os.WriteFile(path, []byte(name+"\n"), 0o644)
+			}
+		}))
+	}
 	if filepath.Base(os.Args[0]) == "wqc" || os.Getenv("WQ_COMPACT") == "1" {
 		opts = append(opts, ui.WithCompact())
 	}
@@ -46,6 +58,16 @@ func main() {
 	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen(), tea.WithOutput(out), tea.WithReportFocus()).Run(); err != nil {
 		fail(err)
 	}
+}
+
+// densityFile keeps the card density between runs: a view setting of this
+// machine, so it stays out of the data directory.
+func densityFile() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "wq", "density")
 }
 
 func fail(err error) {

@@ -119,7 +119,8 @@ type Model struct {
 
 	caret *Caret // where the terminal cursor rests while typing; nil to leave it
 
-	density density // how tall cards are: zc / zo, compact from the start as wqc
+	density     density // how tall cards are: zc / zo, compact from the start as wqc
+	saveDensity func(string)
 }
 
 // Option configures a Model.
@@ -127,6 +128,24 @@ type Option func(*Model)
 
 // WithCompact draws one-line cards, so far more rows fit on the screen.
 func WithCompact() Option { return func(m *Model) { m.density = densityCompact } }
+
+// WithDensity starts with the cards drawn at the named density ("full",
+// "slim" or "compact"); an unknown name leaves them full.
+func WithDensity(name string) Option {
+	return func(m *Model) {
+		for d, n := range densityNames {
+			if n == name {
+				m.density = density(d)
+			}
+		}
+	}
+}
+
+// WithDensitySaver is told the density's name whenever zc / zo change it,
+// so the next wq can start the same way.
+func WithDensitySaver(save func(string)) Option {
+	return func(m *Model) { m.saveDensity = save }
+}
 
 // layout places the board for the terminal's width.
 func (m *Model) layout() layout { return makeLayout(m.b, m.width, m.density) }
@@ -809,6 +828,9 @@ func (m *Model) setDensity(step int) {
 	m.density = d
 	m.scroll = max(0, m.layout().rowY[min(m.row, m.lastRow())]-before)
 	m.msg = "cards: " + densityNames[d]
+	if m.saveDensity != nil {
+		m.saveDensity(densityNames[d])
+	}
 }
 
 // align puts the cursor's row at the middle (zz), top (zt) or bottom (zb)
