@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -36,27 +37,19 @@ const (
 )
 
 // layout maps grid cells to canvas coordinates. Rows are separated by
-// fixed-height lanes for edges. Some gaps get lines of their own: a group
-// frame's bottom right under its last row, a session break below the lane,
-// and a group frame's top right over its first row.
+// fixed-height lanes for edges. Some gaps get lines of their own: a frame's
+// outline right under a row where it closes below a member, a session break
+// below the lane, and a frame's outline right over a row where it closes
+// above a member.
 type layout struct {
 	cardW   int
 	rowY    []int
 	breakAt map[int]int  // row → the line its break is drawn on
 	breakY  map[int]bool // lines holding a session break
 	noH     map[int]bool // lines edges only cross: breaks and frame tops / bottoms
-	frames  []frame
+	frames  []frame      // set by withFrames
 	width   int
 	height  int
-}
-
-// frame is a group's rectangle on the canvas, drawn in the gaps around its
-// members' cards.
-type frame struct {
-	x0, y0, x1, y1 int
-	id, title      string
-	done, total    int
-	members        map[string]bool
 }
 
 func newLayout(b *board.Board, termW int) layout {
@@ -64,16 +57,23 @@ func newLayout(b *board.Board, termW int) layout {
 	l.cardW = max(l.cardW, 8)
 	l.width = 2*margin + board.Cols*l.cardW + (board.Cols-1)*gap
 	rows := b.MaxRow() + 1 + bufferRows
-	type span struct {
-		r0, c0, r1, c1 int
-		g              board.Group
-	}
-	var spans []span
+	// A member whose neighbour above (below) is not in its frame has the
+	// frame's line over (under) it.
 	top, bottom := map[int]bool{}, map[int]bool{}
 	for _, g := range b.Groups {
-		if r0, c0, r1, c1, ok := b.Bounds(g); ok {
-			spans = append(spans, span{r0, c0, r1, c1, g})
-			top[r0], bottom[r1] = true, true
+		cells := map[[2]int]bool{}
+		for _, id := range g.Members {
+			if n := b.Node(id); n != nil {
+				cells[[2]int{n.Row, n.Col}] = true
+			}
+		}
+		for c := range cells {
+			if !cells[[2]int{c[0] - 1, c[1]}] {
+				top[c[0]] = true
+			}
+			if !cells[[2]int{c[0] + 1, c[1]}] {
+				bottom[c[0]] = true
+			}
 		}
 	}
 	l.breakAt, l.breakY, l.noH = map[int]int{}, map[int]bool{}, map[int]bool{}
@@ -97,24 +97,13 @@ func newLayout(b *board.Board, termW int) layout {
 		}
 	}
 	l.height = y
-	for _, s := range spans {
-		f := frame{
-			x0: l.colX(s.c0) - 1, y0: l.rowY[s.r0] - 1,
-			x1: l.colX(s.c1) + l.cardW, y1: l.rowY[s.r1] + cardH,
-			id: s.g.ID, title: s.g.Title,
-			members: map[string]bool{},
-		}
-		for _, id := range s.g.Members {
-			if n := b.Node(id); n != nil {
-				f.members[id] = true
-				f.total++
-				if n.Done {
-					f.done++
-				}
-			}
-		}
-		l.frames = append(l.frames, f)
-	}
+	return l
+}
+
+// withFrames shapes the frames too, which costs far more than the rest of
+// the layout; the model keeps them with the routes instead.
+func (l layout) withFrames(b *board.Board) layout {
+	l.frames = layoutFrames(b, l)
 	return l
 }
 
@@ -149,13 +138,12 @@ const (
 	stMeter
 	stChecks
 	stChecksDone
-	stFrame
-	stFrameLit
 	stEdge
 	stEdgeDim
 	stEdgeIn
 	stEdgeOut
 	stDot
+	stFrame // the first of the frame styles: see frameStyle
 )
 
 var styles = map[style]lipgloss.Style{
@@ -176,13 +164,35 @@ var styles = map[style]lipgloss.Style{
 	stMeter:         lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
 	stChecks:        lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
 	stChecksDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
-	stFrame:         lipgloss.NewStyle().Foreground(lipgloss.Color("97")),
-	stFrameLit:      lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true),
 	stEdge:          lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
 	stEdgeDim:       lipgloss.NewStyle().Foreground(lipgloss.Color("237")), // the rest, while a node's edges are lit
 	stEdgeIn:        lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true),
 	stEdgeOut:       lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true),
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
+}
+
+// framePalette holds the colors frames take turns in: dim, and lit while
+// the cursor is on the frame or one of its members.
+var framePalette = [board.FrameColors][2]lipgloss.Color{
+	{"97", "141"},  // purple
+	{"30", "43"},   // teal
+	{"132", "211"}, // rose
+	{"100", "149"}, // olive
+}
+
+func init() {
+	for i, c := range framePalette {
+		styles[frameStyle(i, false)] = lipgloss.NewStyle().Foreground(c[0])
+		styles[frameStyle(i, true)] = lipgloss.NewStyle().Foreground(c[1]).Bold(true)
+	}
+}
+
+func frameStyle(color int, lit bool) style {
+	st := stFrame + style(2*color)
+	if lit {
+		st++
+	}
+	return st
 }
 
 type cell struct {
@@ -361,69 +371,92 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	}
 }
 
-// drawRect draws a group frame. Edges are drawn later and win where they
-// cross it.
-func drawRect(cv *canvas, f frame, st style, heavy bool) {
-	r := frameNormal
-	if heavy {
-		r = frameBold
+// drawFrameLines draws a frame's outline and necks, heavy when the frame
+// is selected. Edges are drawn later and win where they cross it.
+func drawFrameLines(cv *canvas, f frame, st style, heavy bool) {
+	for p, bits := range f.lines {
+		r := frameRune(bits)
+		if heavy {
+			r = edgeRuneHeavy(bits)
+		}
+		cv.set(p.x, p.y, r, st)
 	}
-	for x := f.x0 + 1; x < f.x1; x++ {
-		cv.set(x, f.y0, r[1], st)
-		cv.set(x, f.y1, r[1], st)
-	}
-	for y := f.y0 + 1; y < f.y1; y++ {
-		cv.set(f.x0, y, r[3], st)
-		cv.set(f.x1, y, r[3], st)
-	}
-	cv.set(f.x0, f.y0, r[0], st)
-	cv.set(f.x1, f.y0, r[2], st)
-	cv.set(f.x0, f.y1, r[4], st)
-	cv.set(f.x1, f.y1, r[5], st)
 }
 
-// drawFrameLabels writes a frame's progress at the right end of its top
-// line and its title at the left, after the edges, into stretches no edge
-// crosses (bits marks edge cells). A title that does not fit before the
-// first crossing takes the first stretch it fits in, on the top line or
-// else the bottom one, or failing that the widest, cut short; the header's
-// breadcrumb still names it in full.
+// frameRune is edgeRune with the rounded corners of cards.
+func frameRune(bits uint8) rune {
+	switch bits {
+	case bitD | bitR:
+		return '╭'
+	case bitD | bitL:
+		return '╮'
+	case bitU | bitR:
+		return '╰'
+	case bitU | bitL:
+		return '╯'
+	}
+	return edgeRune(bits)
+}
+
+// drawFrameLabels writes a frame's progress and title, after the edges,
+// on the straight stretches of its outline that no edge crosses (bits
+// marks edge cells) and no neck leaves from. The progress takes the right
+// end of the topmost stretch, the title the first stretch it fits in, top
+// to bottom and left to right, or failing that the widest, cut short; the
+// header's breadcrumb still names it in full.
 func drawFrameLabels(cv *canvas, f frame, st style, bits []uint8) {
-	if f.y0 < 0 || f.y1 >= cv.h {
+	type stretch struct{ x0, x1, y int } // cells x0..x1-1
+	var runs []stretch
+	for p, b := range f.lines {
+		if b == bitL|bitR && p.y >= 0 && p.y < cv.h {
+			runs = append(runs, stretch{p.x, p.x + 1, p.y})
+		}
+	}
+	sort.Slice(runs, func(i, j int) bool {
+		if runs[i].y != runs[j].y {
+			return runs[i].y < runs[j].y
+		}
+		return runs[i].x0 < runs[j].x0
+	})
+	merged := runs[:0]
+	for _, r := range runs {
+		if k := len(merged) - 1; k >= 0 && merged[k].y == r.y && merged[k].x1 == r.x0 {
+			merged[k].x1 = r.x1
+			continue
+		}
+		merged = append(merged, r)
+	}
+	runs = merged
+	if len(runs) == 0 {
 		return
 	}
 	free := func(x, y int) bool { return x >= 0 && x < cv.w && bits[y*cv.w+x] == 0 }
-	end := f.x1 - 1 // labels stay clear of the corners
-	if p := f.progress(); p != "" {
+	// Labels keep a cell of line between them and a corner or a crossing.
+	if p := fmt.Sprintf(" %d/%d ", f.done, f.total); f.total > 0 {
 		pw := runewidth.StringWidth(p)
-		ok := true
-		for x := end - pw; x < end; x++ {
-			ok = ok && free(x, f.y0)
+		r := &runs[0]
+		end := r.x1 - 1
+		ok := end-pw > r.x0
+		for x := end - pw; ok && x < end; x++ {
+			ok = free(x, r.y)
 		}
 		if ok {
-			cv.text(end-pw, f.y0, p, st)
-			end -= pw
+			cv.text(end-pw, r.y, p, st)
+			r.x1 = end - pw
 		}
 	}
 	if f.title == "" {
 		return
 	}
-	// Each label keeps a cell of line on either side, so it reads as part
-	// of the frame.
 	full := runewidth.StringWidth(f.title) + 4
-	type stretch struct{ x0, x1, y int }
 	var best stretch
-	for _, y := range []int{f.y0, f.y1} {
-		lineEnd := end
-		if y == f.y1 {
-			lineEnd = f.x1 - 1
-		}
-		for x := f.x0 + 1; x < lineEnd; x++ {
-			if !free(x, y) {
+	for _, r := range runs {
+		for x := r.x0; x < r.x1; x++ {
+			if !free(x, r.y) {
 				continue
 			}
-			s := stretch{x, x, y}
-			for s.x1 < lineEnd && free(s.x1, y) {
+			s := stretch{x, x, r.y}
+			for s.x1 < r.x1 && free(s.x1, r.y) {
 				s.x1++
 			}
 			if s.x1-s.x0 >= full {
@@ -440,16 +473,6 @@ draw:
 	if room := best.x1 - best.x0 - 4; room >= 1 {
 		cv.text(best.x0+1, best.y, " "+runewidth.Truncate(f.title, room, "…")+" ", st)
 	}
-}
-
-// progress is the done count on a frame's top line, "" when there is no
-// room for it.
-func (f frame) progress() string {
-	p := fmt.Sprintf(" %d/%d ", f.done, f.total)
-	if f.x1-f.x0 <= runewidth.StringWidth(p)+3 {
-		return ""
-	}
-	return p
 }
 
 // drawBreaks draws each session break as a dotted line on its own line under
@@ -586,12 +609,9 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	cur := b.At(v.cursorRow, v.cursorCol)
 	frameSt := make([]style, len(l.frames))
 	for i, f := range l.frames {
-		st, heavy := stFrame, f.id != "" && f.id == v.frameSel
-		if heavy || (cur != nil && f.members[cur.ID]) {
-			st = stFrameLit
-		}
-		frameSt[i] = st
-		drawRect(cv, f, st, heavy)
+		heavy := f.id != "" && f.id == v.frameSel
+		frameSt[i] = frameStyle(f.color, heavy || (cur != nil && f.members[cur.ID]))
+		drawFrameLines(cv, f, frameSt[i], heavy)
 	}
 	onCursor := false
 	for _, n := range b.Nodes {

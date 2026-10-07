@@ -38,7 +38,7 @@ func main() {
 	caret := &ui.Caret{}
 	opts = append(opts, ui.WithCaret(caret))
 	out := ui.CaretOutput{File: os.Stdout, C: caret}
-	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen(), tea.WithOutput(out)).Run(); err != nil {
+	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen(), tea.WithOutput(out), tea.WithReportFocus()).Run(); err != nil {
 		fail(err)
 	}
 }

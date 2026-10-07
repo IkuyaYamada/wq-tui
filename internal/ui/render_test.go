@@ -180,7 +180,7 @@ func TestFrameTitleDodgesEdges(t *testing.T) {
 		Edges:  []board.Edge{{From: "a", To: "c"}, {From: "b", To: "c"}},
 		Groups: []board.Group{{ID: "g", Title: "レビュー準備作業", Members: []string{"c"}}},
 	}
-	l := newLayout(b, 120)
+	l := newLayout(b, 120).withFrames(b)
 	cv := renderBoard(b, l, routeEdges(b, l), view{cursorRow: -1})
 	out := plain(cv)
 	t.Log("\n" + out)
@@ -189,9 +189,32 @@ func TestFrameTitleDodgesEdges(t *testing.T) {
 			t.Errorf("line %d is %d cells wide, want %d", y, w, cv.w)
 		}
 	}
-	f := l.frames[0]
-	lines := strings.Split(out, "\n")
-	if !strings.Contains(lines[f.y0]+lines[f.y1], " レビュー準") {
+	if !strings.Contains(out, " レビュー準") {
 		t.Errorf("frame title missing or cut by an edge")
+	}
+}
+
+func TestFrameHugsMembersAndJoinsPieces(t *testing.T) {
+	n := func(id, title string, row, col int) board.Node {
+		return board.Node{ID: id, Title: title, Row: row, Col: col}
+	}
+	b := &board.Board{
+		Nodes: []board.Node{
+			n("a", "スキーマ", 0, 0), n("b", "API", 0, 1), n("x", "他", 0, 2),
+			n("c", "移行", 1, 0), n("y", "他2", 1, 1),
+			n("d", "遠い子", 3, 3),
+		},
+		Edges:  []board.Edge{{From: "a", To: "c"}, {From: "x", To: "d"}},
+		Groups: []board.Group{{ID: "g", Title: "設計", Color: 2, Members: []string{"a", "b", "c", "d"}}},
+	}
+	l := newLayout(b, 100).withFrames(b)
+	cv := renderBoard(b, l, routeEdges(b, l), view{cursorRow: -1})
+	out := plain(cv)
+	t.Log("\n" + out)
+	if strings.Count(out, "╭") < 3 {
+		t.Error("the outline should take the L shape and round the far piece")
+	}
+	if !strings.ContainsAny(out, "┬┴") {
+		t.Error("a neck should join the far piece")
 	}
 }

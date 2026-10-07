@@ -29,9 +29,9 @@ func (m *Model) focus() *board.Node {
 	return m.selected()
 }
 
-// frameNav steps onto and off frames: k on a frame's top row selects the
-// frame, j comes back to the card, k again leaves it upward. It reports
-// whether it handled the key.
+// frameNav steps onto and off frames: k from a member with the frame's
+// line over it selects the frame, j comes back to the card, k again leaves
+// it upward. It reports whether it handled the key.
 func (m *Model) frameNav(d board.Dir) bool {
 	if m.frameSel != "" {
 		m.frameSel = ""
@@ -49,11 +49,15 @@ func (m *Model) frameNav(d board.Dir) bool {
 	if d != board.Up {
 		return false
 	}
-	gi := m.b.GroupAt(m.row, m.col)
+	n := m.selected()
+	if n == nil {
+		return false
+	}
+	gi := m.b.GroupOf(n.ID)
 	if gi < 0 {
 		return false
 	}
-	if r0, _, _, _, ok := m.b.Bounds(m.b.Groups[gi]); !ok || r0 != m.row {
+	if up := m.b.At(m.row-1, m.col); up != nil && m.b.GroupOf(up.ID) == gi {
 		return false
 	}
 	m.frameSel = m.b.Groups[gi].ID
@@ -79,7 +83,9 @@ func (m *Model) keyFrame(key string, g *board.Group) (cmd tea.Cmd, done bool) {
 	case "enter":
 		return openNode(m.dir, *m.focus()), true
 	case "c":
-		m.msg = "frames do not connect — pick a node inside"
+		m.checkpoint()
+		m.b.CycleColor(g.ID)
+		m.save()
 	case "esc":
 		m.frameSel = ""
 	case "K", "q", "ctrl+c":
@@ -150,25 +156,25 @@ func (m *Model) decompose() tea.Cmd {
 	return m.startInput("title> ", "")
 }
 
-var (
-	crumbFrameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
-	crumbNodeStyle  = lipgloss.NewStyle().Bold(true)
-)
+var crumbNodeStyle = lipgloss.NewStyle().Bold(true)
 
 // breadcrumb names where the cursor is, in full, for the header: the frame
 // (with its progress) and the node, as cards and frame lines cut titles
 // short. It fits in room cells, giving the node's title priority.
 func (m *Model) breadcrumb(room int) string {
 	frame, node := "", ""
+	frameSt := lipgloss.NewStyle()
 	if g := m.selectedFrame(); g != nil {
 		frame = "▸ " + g.Title
 		if r := m.frameProgress(*g); r != "" {
 			frame += " " + r
 		}
+		frameSt = lipgloss.NewStyle().Foreground(framePalette[frameColor(*g)][1])
 	} else if n := m.selected(); n != nil {
 		node = n.Title
 		if gi := m.b.GroupOf(n.ID); gi >= 0 && m.b.Groups[gi].Title != "" {
 			frame = m.b.Groups[gi].Title
+			frameSt = lipgloss.NewStyle().Foreground(framePalette[frameColor(m.b.Groups[gi])][1])
 		}
 	}
 	if room < 8 || (frame == "" && node == "") {
@@ -190,7 +196,7 @@ func (m *Model) breadcrumb(room int) string {
 	node = runewidth.Truncate(node, max(nodeW, 0), "…")
 	out := "  "
 	if frame != "" {
-		out += crumbFrameStyle.Render(frame)
+		out += frameSt.Render(frame)
 	}
 	out += dimStyle.Render(sep)
 	if node != "" {

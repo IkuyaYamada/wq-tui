@@ -88,6 +88,7 @@ type Model struct {
 	msg           string
 
 	routes   []route
+	frames   []frame // shaped with the routes; relabel before drawing
 	routeKey string
 	stats    map[string]nodeStats // how much each node has written, for the meters
 
@@ -142,6 +143,7 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	m.stamp, _ = board.CurrentStamp(dir)
 	m.stats = readAllStats(dir, b)
 	b.EnsureGroupIDs(time.Now())
+	b.EnsureGroupColors()
 	return m
 }
 
@@ -225,6 +227,7 @@ func (m *Model) reload() {
 	m.stamp, _ = board.CurrentStamp(m.dir)
 	m.stats = readAllStats(m.dir, b)
 	b.EnsureGroupIDs(time.Now())
+	b.EnsureGroupColors()
 	m.frameSel = ""
 	m.stale = false
 	m.undo, m.redo = nil, nil
@@ -322,6 +325,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case tea.FocusMsg:
+		// Back from another app, which may have left the Japanese input
+		// method on: board keys need ASCII again.
+		if m.mode != modeInput && m.mode != modeEdit {
+			m.toASCII()
+		}
 	case asciiAgainMsg:
 		if m.mode != modeInput {
 			if prev := m.ime.ASCII(); prev != "" {
@@ -346,6 +355,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		m.msg = ""
 		if m.mode != modeInput && m.mode != modeEdit {
+			if wide(msg) {
+				// A full-width key means an input method is on; this one
+				// still works, the next ones arrive as ASCII.
+				m.toASCII()
+			}
 			msg = halfwidth(msg)
 		}
 		if m.mode == modeNormal || m.mode == modeVisual {
@@ -398,11 +412,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// refreshRoutes reroutes edges only when positions, edges or width changed;
-// routing is the one expensive part of drawing.
+// refreshRoutes reroutes edges and reshapes frames only when positions,
+// edges, frames or width changed; they are the expensive part of drawing.
 func (m *Model) refreshRoutes() {
 	if key := routeKey(m.b, m.width); key != m.routeKey {
-		m.routes = routeEdges(m.b, newLayout(m.b, m.width))
+		l := newLayout(m.b, m.width).withFrames(m.b)
+		m.routes, m.frames = routeEdges(m.b, l), l.frames
 		m.routeKey = key
 	}
 }
@@ -1166,9 +1181,21 @@ func (m *Model) keyVisual(k tea.KeyMsg) tea.Cmd {
 			return nil
 		}
 		if key == "g" {
-			// Name the frame first; Esc gives up on it.
-			m.frameIDs, m.inputFrame = ids, true
-			return m.startInput("frame> ", "")
+			// A selection reaching into one frame grows that frame; one
+			// touching none makes a new frame, named first (Esc gives up).
+			switch frames := m.b.FramesOf(ids); len(frames) {
+			case 0:
+				m.frameIDs, m.inputFrame = ids, true
+				return m.startInput("frame> ", "")
+			case 1:
+				m.checkpoint()
+				added := m.b.AddToGroup(frames[0], ids)
+				m.msg = fmt.Sprintf("added %d nodes to %s", added, m.b.Group(frames[0]).Title)
+				m.save()
+			default:
+				m.msg = "the selection reaches into more than one frame"
+			}
+			return nil
 		}
 		m.checkpoint()
 		m.b.Ungroup(ids)
@@ -1290,7 +1317,7 @@ var help = map[mode]string{
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeEdit:      "esc save & close · ^c discard · ⏎ new line",
 	modeMoveBreak: "jk move the session break · i edit label · x delete · ⏎ place · esc cancel",
-	modeVisual:    "hjkl extend · = organize · m move together · g frame · u unframe · d delete · v block / V rows · esc cancel",
+	modeVisual:    "hjkl extend · = organize · m move together · g frame (or add to the frame it reaches into) · u unframe · d delete · v block / V rows · esc cancel",
 }
 
 func (m Model) View() string {
@@ -1329,7 +1356,7 @@ func (m Model) View() string {
 	default:
 		h := help[m.mode]
 		if m.selectedFrame() != nil && m.mode == modeNormal && !m.preview {
-			h = "FRAME  m move · x unframe · ␣ done all · i rename · K preview · ⏎ open · j back"
+			h = "FRAME  m move · x unframe · c color · ␣ done all · i rename · K preview · ⏎ open · j back"
 		}
 		if m.preview && m.mode == modeNormal {
 			h = "PREVIEW  hjkl follow the cursor · ^d/^u scroll · i edit strategy · a new entry · ⏎ open in vim · K/esc close"
@@ -1344,6 +1371,7 @@ func (m Model) viewBoard() []string {
 	body := make([]string, m.bodyHeight())
 	l := newLayout(m.b, m.width)
 	m.refreshRoutes() // no-op unless View runs before the first Update
+	l.frames = relabel(m.b, m.frames)
 	v := view{cursorRow: m.row, cursorCol: m.col, cursorSt: stBorderSel, stats: m.stats, frameSel: m.frameSel}
 	if m.selectedFrame() != nil {
 		v.cursorRow, v.cursorCol = -1, -1 // the frame is the cursor
@@ -1419,6 +1447,20 @@ func setOf(ids []string) map[string]bool {
 		out[id] = true
 	}
 	return out
+}
+
+// wide reports whether a key came through an input method: anything
+// beyond ASCII, as board keys all are.
+func wide(k tea.KeyMsg) bool {
+	if k.Type != tea.KeyRunes {
+		return false
+	}
+	for _, r := range k.Runes {
+		if r > 0x7E {
+			return true
+		}
+	}
+	return false
 }
 
 // halfwidth maps full-width ASCII (ｈｊｋｌ, typed with a Japanese input

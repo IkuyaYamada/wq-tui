@@ -47,11 +47,16 @@ func routeEdges(b *board.Board, l layout) []route {
 
 	src, dst := assignPorts(b, l, idx)
 
-	// Running down along a frame's side would hide it; crossing it is fine.
-	sides := make([]bool, w*h)
+	// Running along a frame's line would hide it; crossing it is fine.
+	// sides holds each line's own direction: up-down along the sides of
+	// outlines and necks, left-right along necks (edges never run along
+	// an outline's top or bottom, which is on a line of its own).
+	sides := make([]uint8, w*h)
 	for _, f := range l.frames {
-		for y := f.y0; y <= f.y1; y++ {
-			sides[y*w+f.x0], sides[y*w+f.x1] = true, true
+		for p, bits := range f.lines {
+			if p.x >= 0 && p.x < w && p.y >= 0 && p.y < h {
+				sides[p.y*w+p.x] |= bits
+			}
 		}
 	}
 
@@ -163,9 +168,9 @@ func (q *pq) Pop() any          { old := *q; it := old[len(old)-1]; *q = old[:le
 
 // shortestPath runs Dijkstra over (cell, last move) states between the
 // start row and the end row. Lines in noH (session breaks, frame tops and
-// bottoms) are only crossed straight down, never run along; running down a
-// frame side (sides) costs extra.
-func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map[int]bool, sides []bool) []point {
+// bottoms) are only crossed straight down, never run along; running along a
+// frame's line (sides, as connection bits) costs extra.
+func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map[int]bool, sides []uint8) []point {
 	if start.y > end.y {
 		return nil
 	}
@@ -211,7 +216,7 @@ func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map
 				c += costTurn
 			}
 			if nd == moveDown {
-				if sides[k] {
+				if sides[k]&(bitU|bitD) == bitU|bitD {
 					c += costSide
 				}
 				if usedV[k] {
@@ -221,6 +226,9 @@ func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map
 					c += costCross
 				}
 			} else {
+				if sides[k]&(bitL|bitR) == bitL|bitR {
+					c += costSide
+				}
 				if usedH[k] {
 					c += costOverlap
 				}

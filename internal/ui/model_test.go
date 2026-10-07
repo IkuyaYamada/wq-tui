@@ -252,6 +252,39 @@ func TestIMESwitchesAroundTitleInput(t *testing.T) {
 	}
 }
 
+func TestIMEBackToASCIIOnFocusAndWideKeys(t *testing.T) {
+	f := &fakeIME{current: "Japanese"}
+	m := New(t.TempDir(), &board.Board{}, WithIME(f))
+
+	// Another app turned the input method on; coming back switches it off.
+	f.current = "Japanese"
+	next, _ := m.Update(tea.FocusMsg{})
+	m = next.(Model)
+	if f.current != "ABC" {
+		t.Errorf("focus: got %s", f.current)
+	}
+
+	// A full-width key on the board switches too, and still acts.
+	f.current = "Japanese"
+	m = press(t, m, "ａ")
+	if f.current != "Japanese" || m.mode != modeInput {
+		t.Fatalf("ａ should open the title prompt in the input method: %s %v", f.current, m.mode)
+	}
+	// While typing a title, neither focus nor wide keys switch.
+	m = press(t, m, "全角")
+	next, _ = m.Update(tea.FocusMsg{})
+	m = next.(Model)
+	if f.current != "Japanese" {
+		t.Errorf("title prompt should keep the input method: %s", f.current)
+	}
+	m = press(t, m, "<enter>")
+	f.current = "Japanese"
+	m = press(t, m, "ｊ")
+	if f.current != "ABC" {
+		t.Errorf("wide key on the board: got %s", f.current)
+	}
+}
+
 func TestFullWidthKeysWorkOnBoard(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{})
 	m = press(t, m, "ａ", "全角", "<enter>", "ｏ", "ｊｋ", "<enter>")
@@ -906,6 +939,21 @@ func TestFrameNodesInVisualMode(t *testing.T) {
 	if len(m.b.Groups) != 1 {
 		t.Errorf("undo: %+v", m.b.Groups)
 	}
+
+	// g on a selection reaching into the frame adds the rest to it, with
+	// no title to ask for; one reaching into two frames is refused.
+	m.row, m.col = 1, 1
+	m = press(t, m, "v", "k", "l", "g")
+	if g := m.b.Groups[0]; m.mode != modeNormal || g.Title != "設計" || m.b.GroupOf("X") != 0 || len(g.Members) != 5 {
+		t.Fatalf("add to frame: mode %v %+v", m.mode, g)
+	}
+	m.row, m.col = 4, 3
+	m = press(t, m, "v", "g", "別", "<enter>")
+	m.row, m.col = 0, 0
+	m = press(t, m, "V", "j", "j", "j", "j", "g")
+	if len(m.b.Groups) != 2 || m.b.GroupOf("Y") != 1 || len(m.b.Groups[0].Members) != 5 || m.mode != modeNormal {
+		t.Errorf("two frames: %+v", m.b.Groups)
+	}
 }
 
 func TestFrameAsATarget(t *testing.T) {
@@ -927,7 +975,8 @@ func TestFrameAsATarget(t *testing.T) {
 	}
 	id := m.b.Groups[0].ID
 
-	// k from the frame's top row selects it; j comes back, k k leaves upward.
+	// k from a member with the frame's line over it selects the frame; j
+	// comes back, k k leaves upward.
 	m.row, m.col = 2, 0
 	m = press(t, m, "k")
 	if m.frameSel != "" || m.row != 1 {
@@ -935,7 +984,7 @@ func TestFrameAsATarget(t *testing.T) {
 	}
 	m = press(t, m, "k")
 	if m.frameSel != id {
-		t.Fatalf("k on the top row selects the frame")
+		t.Fatalf("k under the frame's line selects the frame")
 	}
 	view := m.View()
 	t.Log("\n" + view)
@@ -965,6 +1014,18 @@ func TestFrameAsATarget(t *testing.T) {
 	if m.b.Node("A").Done {
 		t.Error("second space should reopen")
 	}
+
+	// c gives the frame the next color; u takes it back.
+	color := m.b.Group(id).Color
+	m = press(t, m, "c")
+	if m.b.Group(id).Color != color%board.FrameColors+1 || m.frameSel != id {
+		t.Errorf("c: color %d → %d, sel %q", color, m.b.Group(id).Color, m.frameSel)
+	}
+	m = press(t, m, "u") // lets the frame go, as keys not about frames do
+	if m.b.Group(id).Color != color {
+		t.Errorf("undo color: %d", m.b.Group(id).Color)
+	}
+	m = press(t, m, "k")
 
 	// i renames, m moves the members together, x drops only the frame.
 	m = press(t, m, "i")

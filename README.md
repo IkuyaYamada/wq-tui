@@ -113,37 +113,49 @@ cluster, say the pieces a node that grew too big was broken into. It has a
 title and, like a node, its own strategy and thread (`nodes/<id>/`). Frames
 live in board.json as `groups` and do not nest.
 
+The line hugs the members, so a frame takes whatever shape they make: an L,
+a ring, a column. Members that sit apart are joined by a neck, a thin line
+routed through the gaps like an edge, so the pieces still read as one frame:
+
 ```
-╭─ 設計 ───────────────── 1/3 ─╮
+╭─ 設計 ───────────────── 0/4 ─╮
 │╭──────────╮  ╭──────────╮    │
 ││ スキーマ │  │ API      │    │
 │╰──────────╯  ╰──────────╯    │
-│╭──────────╮                  │
-││ 移行     │                  │
-│╰──────────╯                  │
-╰──────────────────────────────╯
+│              ╭────────┬──────╯
+│╭──────────╮  │        ╰─────────╮
+││ 移行     │  │                  │
+│╰──────────╯  │          ╭───────┴──╮
+╰──────────────╯          │╭────────╮│
+                          ││ 遠い子 ││
+                          │╰────────╯│
+                          ╰──────────╯
 ```
+
+Each frame has a color, and new frames take turns through four (purple,
+teal, rose, olive), so neighbouring frames tell apart at a glance; `c` on a
+selected frame moves it on to the next. The header's frame name is in the
+frame's color.
 
 | Key | Action |
 | --- | --- |
-| `v` / `V` … `g` | Frame the selection; asks for a title (`Esc` gives up) |
+| `v` / `V` … `g` | Frame the selection; asks for a title (`Esc` gives up). A selection that takes in members of one frame adds the rest to that frame instead, so one member is enough to point at it; one reaching into two frames is refused |
 | `v` / `V` … `u` | Take the selection out of its frames; an empty frame disappears |
 | `gs` | Split the node into a frame: the frame keeps its title, url and notes, a first child takes its cell and edges and asks for a title (`Esc` undoes the split) |
-| `k` on a frame's top row | Select the frame (bold); `j` goes back in, `k` again leaves upward |
+| `k` from a member with the frame's line over it | Select the frame (bold); `j` goes back in, `k` again leaves upward |
 
 With a frame selected: `m` moves its members together, `x` removes the frame
 (members stay), `Space` completes every member (or reopens them all when
-all are done), `i` renames it, `K` previews and `Enter` opens its own
-notes in vim. Edges stay between nodes: `c` does nothing on a frame.
+all are done), `i` renames it, `c` changes its color, `K` previews and
+`Enter` opens its own notes in vim. Edges stay between nodes: `c` never
+connects a frame.
 The header line names where the cursor is in full, frame › node, as frame
 lines and cards cut long titles short.
 
-A frame is the smallest rectangle around its members and follows them as
-they move; it never adds columns or constrains moves and edges. `o` / `O`
-from a member, and `a` on a member or an empty cell inside a frame, add the
-new node to that frame. Edges cross frames but never run along them. A node
-that is not a member can still sit inside a frame's rectangle: move it out,
-or frame it too.
+A frame follows its members as they move; it never adds columns or
+constrains moves and edges. `o` / `O` from a member, and `a` on a member or
+on an empty cell the members wall in all round, add the new node to that
+frame. Edges cross frames and necks but never run along them.
 
 ## Maturity meters
 
@@ -306,10 +318,17 @@ kept as `thread.md.migrated`.
 ## Input method (macOS)
 
 Board keys need ASCII, so wq switches the keyboard to the ASCII input source
-(e.g. ABC) whenever you are on the board, including after returning from vim.
-While typing a title it switches back to the input method you were using
-(e.g. Japanese). Full-width keys such as `ｈｊｋｌ` are also understood on the
-board. Set `WQ_IME=off` to leave the input source alone.
+(e.g. ABC) whenever you are on the board: at start, after returning from vim
+or a prompt, when the terminal window gets focus back from another app, and
+when a full-width key arrives on the board (the key itself still works:
+`ｈｊｋｌ` move as `hjkl`). While typing a title it switches back to the
+input method you were using (e.g. Japanese). Set `WQ_IME=off` to leave the
+input source alone.
+
+The focus switch needs a terminal that reports focus (Ghostty, iTerm2,
+WezTerm, kitty and others do); inside tmux, add `set -g focus-events on`.
+In romaji mode the Japanese input method keeps keys to itself until they are
+converted, so wq cannot see them; the focus switch is what covers that case.
 
 The switch goes through the Carbon Text Input Sources API, loaded at runtime
 with purego, so no cgo is needed. `WQ_IME_LIVE=1 go test ./internal/ime`
