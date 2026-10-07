@@ -1256,3 +1256,19 @@ func TestCompactModelScrollsByCompactRows(t *testing.T) {
 		t.Error("the last row should be on screen")
 	}
 }
+
+func TestZcZoStepCardDensity(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	m = press(t, m, "z", "c")
+	if m.density != densitySlim {
+		t.Fatalf("zc: %v", m.density)
+	}
+	m = press(t, m, "z", "c", "z", "c")
+	if m.density != densityCompact || !strings.Contains(m.msg, "already") {
+		t.Errorf("zc stops at compact: %v %q", m.density, m.msg)
+	}
+	m = press(t, m, "z", "o", "z", "o", "z", "o")
+	if m.density != densityFull {
+		t.Errorf("zo back to full: %v", m.density)
+	}
+}

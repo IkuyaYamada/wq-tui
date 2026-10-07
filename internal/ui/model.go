@@ -119,17 +119,17 @@ type Model struct {
 
 	caret *Caret // where the terminal cursor rests while typing; nil to leave it
 
-	compact bool // one-line cards (wqc)
+	density density // how tall cards are: zc / zo, compact from the start as wqc
 }
 
 // Option configures a Model.
 type Option func(*Model)
 
 // WithCompact draws one-line cards, so far more rows fit on the screen.
-func WithCompact() Option { return func(m *Model) { m.compact = true } }
+func WithCompact() Option { return func(m *Model) { m.density = densityCompact } }
 
 // layout places the board for the terminal's width.
-func (m *Model) layout() layout { return makeLayout(m.b, m.width, m.compact) }
+func (m *Model) layout() layout { return makeLayout(m.b, m.width, m.density) }
 
 // WithIME lets the model switch the keyboard input source.
 func WithIME(s ime.Switcher) Option { return func(m *Model) { m.ime = s } }
@@ -423,7 +423,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // refreshRoutes reroutes edges and reshapes frames only when positions,
 // edges, frames or width changed; they are the expensive part of drawing.
 func (m *Model) refreshRoutes() {
-	if key := fmt.Sprint(m.compact) + routeKey(m.b, m.width); key != m.routeKey {
+	if key := fmt.Sprint(m.density) + routeKey(m.b, m.width); key != m.routeKey {
 		l := m.layout().withFrames(m.b)
 		m.routes, m.frames = routeEdges(m.b, l), l.frames
 		m.routeKey = key
@@ -572,6 +572,14 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
 	if m.pendingZ {
 		m.pendingZ = false
+		switch key {
+		case "c": // like closing a fold: denser
+			m.setDensity(1)
+			return nil
+		case "o": // opening one: fuller
+			m.setDensity(-1)
+			return nil
+		}
 		m.align(key)
 		return nil
 	}
@@ -787,6 +795,20 @@ func (m *Model) scrollRows(n int) {
 	for m.row > 0 && l.rowY[m.row]+l.cardH+1 > m.scroll+h {
 		m.row--
 	}
+}
+
+// setDensity steps the cards' height by step (1 denser, -1 fuller),
+// keeping the cursor's row where it was on the screen.
+func (m *Model) setDensity(step int) {
+	d := min(max(m.density+density(step), densityFull), densityCompact)
+	if d == m.density {
+		m.msg = "cards are already " + densityNames[d]
+		return
+	}
+	before := m.layout().rowY[min(m.row, m.lastRow())] - m.scroll
+	m.density = d
+	m.scroll = max(0, m.layout().rowY[min(m.row, m.lastRow())]-before)
+	m.msg = "cards: " + densityNames[d]
 }
 
 // align puts the cursor's row at the middle (zz), top (zt) or bottom (zb)
@@ -1320,7 +1342,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",

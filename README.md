@@ -59,12 +59,19 @@ Data lives in `~/wq` (override with `WQ_DIR`):
 Plain files, so the directory can be a git repo of its own; see
 [Backup and other machines](#backup-and-other-machines).
 
-## Compact board
+## Card density
 
-`wqc` is the same board with one-line cards, for when the board grows tall:
-a row takes two lines instead of five, so well over twice as many fit on the
-screen. Same data, same keys; it is the same binary, linked under another
-name (or run with `WQ_COMPACT=1`):
+When the board grows tall, `zc` draws the cards denser and `zo` fuller
+again (like closing and opening a fold in vim), through three steps:
+
+| Step | A row takes | Card |
+| --- | --- | --- |
+| full | 5 lines | borders, two title lines, the completion comment |
+| slim | 3 lines | the title in the top border, meters on the bottom one |
+| compact | 2 lines | a one-line band |
+
+The step lasts until wq quits. `wqc` starts in compact; it is the same
+binary linked under another name (or run with `WQ_COMPACT=1`):
 
 ```sh
 ln -sf "$PWD/wq" ~/.local/bin/wqc
@@ -78,7 +85,10 @@ ln -sf "$PWD/wq" ~/.local/bin/wqc
  リリース
 ```
 
-Each card is a shaded band holding its title; the cursor, a selection and a
+On a slim card the arrowhead sits just above it, as its top border holds
+the title (`╭ 移行 ──── 2/5╮`); the completion comment is left out.
+
+A compact card is a shaded band holding its title; the cursor, a selection and a
 connect target colour the whole band. A done card reads `✓` and is struck
 through; the task list's progress and `↗` sit at the band's right end.
 Edges start right under a card and end in `▼` just above the target.
@@ -95,6 +105,7 @@ the second title line, the maturity meters and the completion comment
 | `Ctrl+d` / `Ctrl+u` | Scroll half a screen down / up, moving the cursor with it |
 | `Ctrl+e` / `Ctrl+y` | Scroll one row down / up; the cursor stays unless it would leave the screen |
 | `zz` / `zt` / `zb` | Put the cursor's row at the middle / top / bottom of the screen |
+| `zc` / `zo` | Draw the cards denser / fuller: full, slim, compact (see [Card density](#card-density)) |
 | `gg` / `G` | The topmost node not yet done (leftmost first; the top-left cell when all are done) / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |

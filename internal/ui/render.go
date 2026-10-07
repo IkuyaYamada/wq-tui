@@ -19,8 +19,10 @@ func init() {
 
 const (
 	// fullCardH is a card's height: borders plus room for a two-line
-	// title. Compact cards are a single line (compactCardH).
+	// title. Slim cards are just the two borders, compact ones a single
+	// line.
 	fullCardH    = 2 + titleLines
+	slimCardH    = 2
 	compactCardH = 1
 
 	// titleLines is how many lines a card gives its title before cutting it
@@ -44,8 +46,30 @@ const (
 // outline right under a row where it closes below a member, a session break
 // below the lane, and a frame's outline right over a row where it closes
 // above a member.
+// density is how tall cards are drawn; zc / zo step between them.
+type density int
+
+const (
+	densityFull    density = iota // bordered, room for two title lines
+	densitySlim                   // the two borders, the title in the top one
+	densityCompact                // a one-line band: see drawCompactCard
+)
+
+var densityNames = [...]string{"full", "slim", "compact"}
+
+func (d density) cardH() int {
+	switch d {
+	case densitySlim:
+		return slimCardH
+	case densityCompact:
+		return compactCardH
+	}
+	return fullCardH
+}
+
 type layout struct {
-	compact bool // one-line cards, no borders: see drawCompactCard
+	density density
+	compact bool // density is densityCompact
 	cardH   int
 	cardW   int
 	rowY    []int
@@ -57,13 +81,10 @@ type layout struct {
 	height  int
 }
 
-func newLayout(b *board.Board, termW int) layout { return makeLayout(b, termW, false) }
+func newLayout(b *board.Board, termW int) layout { return makeLayout(b, termW, densityFull) }
 
-func makeLayout(b *board.Board, termW int, compact bool) layout {
-	l := layout{compact: compact, cardH: fullCardH, cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
-	if compact {
-		l.cardH = compactCardH
-	}
+func makeLayout(b *board.Board, termW int, d density) layout {
+	l := layout{density: d, compact: d == densityCompact, cardH: d.cardH(), cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
 	l.cardW = max(l.cardW, 8)
 	l.width = 2*margin + board.Cols*l.cardW + (board.Cols-1)*gap
 	rows := b.MaxRow() + 1 + bufferRows
@@ -388,6 +409,17 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	if label == "" {
 		label = "…"
 	}
+	// A slim card has no room inside: the title goes in the top border,
+	// before the progress and ↗, and the completion comment is left out.
+	if l.cardH == slimCardH {
+		stop := end // where the progress (or ↗, or the corner) begins
+		if p := st.progress(); p != "" && runewidth.StringWidth(p) <= w-4 {
+			stop -= runewidth.StringWidth(p)
+		}
+		// " title " from x+1, and a cell of line before stop.
+		cv.text(x+1, y, " "+runewidth.Truncate(label, max(stop-x-4, 1), "…")+" ", title)
+		return
+	}
 	// A completion comment takes the second line, so the card (and the
 	// grid) keeps its size; the title gives up its second line for it.
 	if n.Done && n.DoneNote != "" {
@@ -686,8 +718,13 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		} else {
 			drawFrame(cv, l, g.row, g.col, frameDashed, border)
 			x, y := l.colX(g.col), l.rowY[g.row]
+			if l.cardH == slimCardH {
+				cv.text(x+1, y, " "+runewidth.Truncate(g.title, max(l.cardW-4, 1), "…")+" ", stPreviewDim)
+			}
 			for i, line := range titleRows(g.title, l.cardW-4) {
-				cv.text(x+2, y+1+i, line, stPreviewDim)
+				if 1+i < l.cardH-1 {
+					cv.text(x+2, y+1+i, line, stPreviewDim)
+				}
 			}
 		}
 	}
@@ -703,9 +740,11 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	if v.lit != "" {
 		base = stEdgeDim
 	}
-	// Compact cards have no borders to carry ports: an edge just starts
-	// under its card, and its arrowhead goes on its last cell, over the
-	// target, once the lines are drawn.
+	// Only full cards have a top border free for arrowheads: on slim ones
+	// it holds the title, compact ones have none. There an edge's
+	// arrowhead goes on its last cell, over the target, once the lines are
+	// drawn; compact cards carry no source port either, the edge just
+	// starts under the card.
 	type arrow struct {
 		p  point
 		st style
@@ -754,18 +793,18 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 				}
 			}
 		}
-		if l.compact {
-			if len(rt.path) > 0 {
-				arrows = append(arrows, arrow{rt.path[len(rt.path)-1], st})
+		if !l.compact {
+			port := '┬'
+			if lit {
+				port = '┰'
 			}
-			continue
+			cv.set(rt.srcPort.x, rt.srcPort.y, port, st)
 		}
-		port := '┬'
-		if lit {
-			port = '┰'
+		if l.density == densityFull {
+			cv.set(rt.dstPort.x, rt.dstPort.y, '▼', st)
+		} else if len(rt.path) > 0 {
+			arrows = append(arrows, arrow{rt.path[len(rt.path)-1], st})
 		}
-		cv.set(rt.srcPort.x, rt.srcPort.y, port, st)
-		cv.set(rt.dstPort.x, rt.dstPort.y, '▼', st)
 	}
 	drawBreakLabels(cv, l, b.Breaks, bits)
 	for i, f := range l.frames {
