@@ -119,7 +119,7 @@ type Model struct {
 
 	caret *Caret // where the terminal cursor rests while typing; nil to leave it
 
-	density     density // how tall cards are: zc / zo, compact from the start as wqc
+	density     density // how tall cards are: zc / zo
 	saveDensity func(string)
 }
 

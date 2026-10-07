@@ -34,8 +34,7 @@ func main() {
 	}
 	var opts []ui.Option
 	// Cards start at the density zc / zo last left them at on this
-	// machine, or compact when run as wqc (a link to the same binary) or
-	// with WQ_COMPACT=1.
+	// machine, or compact with WQ_COMPACT=1.
 	if path := densityFile(); path != "" {
 		if data, err := os.ReadFile(path); err == nil {
 			opts = append(opts, ui.WithDensity(strings.TrimSpace(string(data))))
@@ -46,7 +45,7 @@ func main() {
 			}
 		}))
 	}
-	if filepath.Base(os.Args[0]) == "wqc" || os.Getenv("WQ_COMPACT") == "1" {
+	if os.Getenv("WQ_COMPACT") == "1" {
 		opts = append(opts, ui.WithCompact())
 	}
 	if os.Getenv("WQ_IME") != "off" {

@@ -73,12 +73,7 @@ again (like closing and opening a fold in vim), through three steps:
 The next wq starts at the step you left it at. It is a setting of the
 machine, not of the board, so it lives outside the data directory, in
 `~/Library/Application Support/wq/density` on macOS (`~/.config/wq/density`
-on Linux). `wqc` always starts in compact; it is the same binary linked
-under another name (or run with `WQ_COMPACT=1`):
-
-```sh
-ln -sf "$PWD/wq" ~/.local/bin/wqc
-```
+on Linux). `WQ_COMPACT=1 wq` starts in compact whatever was left.
 
 ```
  スキーマ      2/5   API
