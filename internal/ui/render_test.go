@@ -218,3 +218,40 @@ func TestFrameHugsMembersAndJoinsPieces(t *testing.T) {
 		t.Error("a neck should join the far piece")
 	}
 }
+
+func TestCompactCardsAreOneLine(t *testing.T) {
+	b := sample()
+	b.Nodes[1].Done = true
+	b.Nodes[2].URL = "https://example.com"
+	full, compact := newLayout(b, 120), makeLayout(b, 120, true)
+	if compact.height*2 > full.height {
+		t.Errorf("compact %d lines, full %d: should be well under half", compact.height, full.height)
+	}
+	if compact.rowY[1]-compact.rowY[0] != compactCardH+laneH {
+		t.Errorf("a compact row should take %d lines: %v", compactCardH+laneH, compact.rowY)
+	}
+	routes := routeEdges(b, compact)
+	cv := renderBoard(b, compact, routes, view{cursorRow: 1, cursorCol: 0, cursorSt: stBorderSel, lit: "d"})
+	out := plain(cv)
+	t.Log("\n" + out)
+	lines := strings.Split(out, "\n")
+	for _, rt := range routes {
+		end := rt.path[len(rt.path)-1]
+		if c := cv.cells[end.y*cv.w+end.x]; c.r != '▼' {
+			t.Errorf("%s→%s should end in an arrowhead over its target, got %q", rt.from, rt.to, c.r)
+		}
+	}
+	row0 := lines[compact.rowY[0]]
+	if !strings.Contains(row0, " 要件を洗い出す") || !strings.Contains(row0, "✓ DB調査") || !strings.Contains(row0, "↗") {
+		t.Errorf("titles, done mark and link should share the card's line: %q", row0)
+	}
+	if strings.ContainsAny(out, "╭╰┬") {
+		t.Error("compact cards have no borders or ports")
+	}
+	if c := cv.cells[compact.rowY[1]*cv.w+compact.colX(0)]; c.st != stCardSel {
+		t.Errorf("cursor card style %v", c.st)
+	}
+	if c := cv.cells[compact.rowY[0]*cv.w+compact.colX(1)+compact.cardW-2]; c.st != stCardDoneBand {
+		t.Errorf("a done card's padding should not be struck through: %v", c.st)
+	}
+}

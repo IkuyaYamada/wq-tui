@@ -38,7 +38,7 @@ func routeEdges(b *board.Board, l layout) []route {
 	blocked := make([]bool, w*h)
 	for _, n := range b.Nodes {
 		x0, y0 := l.colX(n.Col), l.rowY[n.Row]
-		for y := y0; y < y0+cardH; y++ {
+		for y := y0; y < y0+l.cardH; y++ {
 			for x := x0; x < x0+l.cardW; x++ {
 				blocked[y*w+x] = true
 			}
@@ -135,7 +135,7 @@ func assignPorts(b *board.Board, l layout, idx map[string]*board.Node) (src, dst
 		}
 		byCol(es, func(e board.Edge) string { return e.To })
 		for k, e := range es {
-			src[e] = point{portX(n, k, len(es)), l.rowY[n.Row] + cardH - 1}
+			src[e] = point{portX(n, k, len(es)), l.rowY[n.Row] + l.cardH - 1}
 		}
 	}
 	for id, es := range in {

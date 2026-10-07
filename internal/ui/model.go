@@ -118,10 +118,18 @@ type Model struct {
 	asciiAgain bool // schedule a second switch to ASCII after this update
 
 	caret *Caret // where the terminal cursor rests while typing; nil to leave it
+
+	compact bool // one-line cards (wqc)
 }
 
 // Option configures a Model.
 type Option func(*Model)
+
+// WithCompact draws one-line cards, so far more rows fit on the screen.
+func WithCompact() Option { return func(m *Model) { m.compact = true } }
+
+// layout places the board for the terminal's width.
+func (m *Model) layout() layout { return makeLayout(m.b, m.width, m.compact) }
 
 // WithIME lets the model switch the keyboard input source.
 func WithIME(s ime.Switcher) Option { return func(m *Model) { m.ime = s } }
@@ -139,7 +147,7 @@ func New(dir string, b *board.Board, opts ...Option) Model {
 	m.cursorTo(firstOpen(b))
 	// Open on that node as the second row, with the row before it above
 	// for context. ensureVisible clamps this once the size is known.
-	m.scroll = newLayout(b, m.width).rowY[max(m.row-1, 0)]
+	m.scroll = m.layout().rowY[max(m.row-1, 0)]
 	m.stamp, _ = board.CurrentStamp(dir)
 	m.stats = readAllStats(dir, b)
 	b.EnsureGroupIDs(time.Now())
@@ -415,8 +423,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // refreshRoutes reroutes edges and reshapes frames only when positions,
 // edges, frames or width changed; they are the expensive part of drawing.
 func (m *Model) refreshRoutes() {
-	if key := routeKey(m.b, m.width); key != m.routeKey {
-		l := newLayout(m.b, m.width).withFrames(m.b)
+	if key := fmt.Sprint(m.compact) + routeKey(m.b, m.width); key != m.routeKey {
+		l := m.layout().withFrames(m.b)
 		m.routes, m.frames = routeEdges(m.b, l), l.frames
 		m.routeKey = key
 	}
@@ -758,24 +766,25 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 // halfPage scrolls half a screen down (dir 1) or up (-1), moving the
 // cursor by the same number of rows, like vim's C-d / C-u.
 func (m *Model) halfPage(dir int) {
-	rows := max(1, m.bodyHeight()/2/(cardH+laneH))
+	rowH := m.layout().cardH + laneH
+	rows := max(1, m.bodyHeight()/2/rowH)
 	before := m.row
 	m.row = max(0, min(m.row+dir*rows, m.lastRow()))
-	m.scroll += (m.row - before) * (cardH + laneH)
+	m.scroll += (m.row - before) * rowH
 }
 
 // scrollRows scrolls the view by n rows (C-e / C-y) without moving the
 // cursor, unless it would leave the screen; then it moves onto the nearest
 // visible row, as in vim.
 func (m *Model) scrollRows(n int) {
-	l := newLayout(m.b, m.width)
-	rowH := cardH + laneH
+	l := m.layout()
+	rowH := l.cardH + laneH
 	h := m.bodyHeight()
 	m.scroll = max(0, min(m.scroll+n*rowH, max(l.height-h, 0)))
 	for m.row < len(l.rowY)-1 && l.rowY[m.row] < m.scroll {
 		m.row++
 	}
-	for m.row > 0 && l.rowY[m.row]+cardH+1 > m.scroll+h {
+	for m.row > 0 && l.rowY[m.row]+l.cardH+1 > m.scroll+h {
 		m.row--
 	}
 }
@@ -783,16 +792,16 @@ func (m *Model) scrollRows(n int) {
 // align puts the cursor's row at the middle (zz), top (zt) or bottom (zb)
 // of the screen.
 func (m *Model) align(key string) {
-	l := newLayout(m.b, m.width)
+	l := m.layout()
 	top := l.rowY[min(m.row, len(l.rowY)-1)]
 	h := m.bodyHeight()
 	switch key {
 	case "z":
-		m.scroll = top + cardH/2 - h/2
+		m.scroll = top + l.cardH/2 - h/2
 	case "t":
 		m.scroll = top
 	case "b":
-		m.scroll = top + cardH + 1 - h
+		m.scroll = top + l.cardH + 1 - h
 	}
 }
 
@@ -1290,9 +1299,9 @@ func (m *Model) toggleDone(comment string) {
 func (m *Model) bodyHeight() int { return max(m.height-2, 1) }
 
 func (m *Model) ensureVisible() {
-	l := newLayout(m.b, m.width)
+	l := m.layout()
 	top := l.rowY[min(m.row, len(l.rowY)-1)]
-	bottom := top + cardH + 1
+	bottom := top + l.cardH + 1
 	h := m.bodyHeight()
 	if top < m.scroll {
 		m.scroll = top
@@ -1369,7 +1378,7 @@ func (m Model) View() string {
 
 func (m Model) viewBoard() []string {
 	body := make([]string, m.bodyHeight())
-	l := newLayout(m.b, m.width)
+	l := m.layout()
 	m.refreshRoutes() // no-op unless View runs before the first Update
 	l.frames = relabel(m.b, m.frames)
 	v := view{cursorRow: m.row, cursorCol: m.col, cursorSt: stBorderSel, stats: m.stats, frameSel: m.frameSel}
@@ -1437,7 +1446,7 @@ func (m *Model) previewBox() (previewBox, bool) {
 	if !m.preview || m.mode != modeNormal || m.previewID == "" || m.focus() == nil {
 		return previewBox{}, false
 	}
-	l := newLayout(m.b, m.width)
+	l := m.layout()
 	return placePreview(l.width, m.bodyHeight(), m.previewText, l.colX(m.col), l.cardW, l.rowY[m.row]-m.scroll)
 }
 

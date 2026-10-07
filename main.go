@@ -32,6 +32,11 @@ func main() {
 		fail(err)
 	}
 	var opts []ui.Option
+	// Run as wqc (a link to the same binary) or with WQ_COMPACT=1 for the
+	// compact board: one-line cards.
+	if filepath.Base(os.Args[0]) == "wqc" || os.Getenv("WQ_COMPACT") == "1" {
+		opts = append(opts, ui.WithCompact())
+	}
 	if os.Getenv("WQ_IME") != "off" {
 		opts = append(opts, ui.WithIME(ime.System{}))
 	}

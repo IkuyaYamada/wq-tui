@@ -79,7 +79,7 @@ func (m *Model) editBox() (previewBox, bool) {
 	if n == nil {
 		return previewBox{}, false
 	}
-	l := newLayout(m.b, m.width)
+	l := m.layout()
 	place := func(rows int) (previewBox, bool) {
 		return placePreview(l.width, m.bodyHeight(), make([]pline, rows), l.colX(m.col), l.cardW, l.rowY[m.row]-m.scroll)
 	}

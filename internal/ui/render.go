@@ -18,7 +18,10 @@ func init() {
 }
 
 const (
-	cardH = 2 + titleLines // borders plus room for a two-line title
+	// fullCardH is a card's height: borders plus room for a two-line
+	// title. Compact cards are a single line (compactCardH).
+	fullCardH    = 2 + titleLines
+	compactCardH = 1
 
 	// titleLines is how many lines a card gives its title before cutting it
 	// off with "…". Every card reserves them, so row heights never change.
@@ -42,6 +45,8 @@ const (
 // below the lane, and a frame's outline right over a row where it closes
 // above a member.
 type layout struct {
+	compact bool // one-line cards, no borders: see drawCompactCard
+	cardH   int
 	cardW   int
 	rowY    []int
 	breakAt map[int]int  // row → the line its break is drawn on
@@ -52,8 +57,13 @@ type layout struct {
 	height  int
 }
 
-func newLayout(b *board.Board, termW int) layout {
-	l := layout{cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
+func newLayout(b *board.Board, termW int) layout { return makeLayout(b, termW, false) }
+
+func makeLayout(b *board.Board, termW int, compact bool) layout {
+	l := layout{compact: compact, cardH: fullCardH, cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
+	if compact {
+		l.cardH = compactCardH
+	}
 	l.cardW = max(l.cardW, 8)
 	l.width = 2*margin + board.Cols*l.cardW + (board.Cols-1)*gap
 	rows := b.MaxRow() + 1 + bufferRows
@@ -84,7 +94,7 @@ func newLayout(b *board.Board, termW int) layout {
 			y++
 		}
 		l.rowY = append(l.rowY, y)
-		y += cardH
+		y += l.cardH
 		if bottom[r] {
 			l.noH[y] = true
 			y++
@@ -143,6 +153,15 @@ const (
 	stEdgeIn
 	stEdgeOut
 	stDot
+	stCard // compact cards: one-line bands
+	stCardSel
+	stCardTarget
+	stCardMove
+	stCardDone
+	stCardDoneSel
+	stCardDoneBand
+	stCardChecks
+	stCardChecksDone
 	stFrame // the first of the frame styles: see frameStyle
 )
 
@@ -169,6 +188,16 @@ var styles = map[style]lipgloss.Style{
 	stEdgeIn:        lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true),
 	stEdgeOut:       lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true),
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
+
+	stCard:           lipgloss.NewStyle().Background(lipgloss.Color("236")),
+	stCardSel:        lipgloss.NewStyle().Background(lipgloss.Color("25")).Foreground(lipgloss.Color("231")).Bold(true),
+	stCardTarget:     lipgloss.NewStyle().Background(lipgloss.Color("136")).Foreground(lipgloss.Color("16")).Bold(true),
+	stCardMove:       lipgloss.NewStyle().Background(lipgloss.Color("30")).Foreground(lipgloss.Color("231")).Bold(true),
+	stCardDone:       lipgloss.NewStyle().Background(lipgloss.Color("234")).Foreground(lipgloss.Color("242")).Strikethrough(true),
+	stCardDoneSel:    lipgloss.NewStyle().Background(lipgloss.Color("25")).Foreground(lipgloss.Color("250")).Strikethrough(true),
+	stCardDoneBand:   lipgloss.NewStyle().Background(lipgloss.Color("234")),
+	stCardChecks:     lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("108")),
+	stCardChecksDone: lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("242")),
 }
 
 // framePalette holds the colors frames take turns in: dim, and lit while
@@ -290,7 +319,7 @@ var (
 
 func drawFrame(cv *canvas, l layout, row, col int, f [6]rune, border style) {
 	x, y := l.colX(col), l.rowY[row]
-	w, bottom := l.cardW, y+cardH-1
+	w, bottom := l.cardW, y+l.cardH-1
 	cv.set(x, y, f[0], border)
 	cv.set(x+w-1, y, f[2], border)
 	cv.set(x, bottom, f[4], border)
@@ -332,7 +361,7 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	// border's left end (edge ports sit further in).
 	for i, r := range st.meters() {
 		if r != 0 {
-			cv.set(x+1+i, y+cardH-1, r, stMeter)
+			cv.set(x+1+i, y+l.cardH-1, r, stMeter)
 		}
 	}
 	end := x + w - 1 // the task list's progress ends before the corner
@@ -603,7 +632,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	// A faint dot marks every cell so empty rows still read as a grid.
 	for r := range l.rowY {
 		for c := 0; c < board.Cols; c++ {
-			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+1, '·', stDot)
+			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+(l.cardH-1)/2, '·', stDot)
 		}
 	}
 	cur := b.At(v.cursorRow, v.cursorCol)
@@ -634,20 +663,32 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 				title = stTitleDoneSel
 			}
 		}
+		if l.compact {
+			drawCompactCard(cv, l, n, compactStyle(border, n.Done), v.stats[n.ID])
+			continue
+		}
 		drawCard(cv, l, n, border, title, bold, v.stats[n.ID])
 	}
 	if !onCursor && v.cursorRow >= 0 && v.cursorRow < len(l.rowY) {
-		drawFrame(cv, l, v.cursorRow, v.cursorCol, frameDashed, v.cursorSt)
+		if l.compact {
+			drawCompactEmpty(cv, l, v.cursorRow, v.cursorCol, "", v.cursorSt)
+		} else {
+			drawFrame(cv, l, v.cursorRow, v.cursorCol, frameDashed, v.cursorSt)
+		}
 	}
 	if g := v.ghost; g != nil && g.row >= 0 && g.row < len(l.rowY) {
 		border := stBorderMove
 		if g.row == v.cursorRow && g.col == v.cursorCol {
 			border = v.cursorSt
 		}
-		drawFrame(cv, l, g.row, g.col, frameDashed, border)
-		x, y := l.colX(g.col), l.rowY[g.row]
-		for i, line := range titleRows(g.title, l.cardW-4) {
-			cv.text(x+2, y+1+i, line, stPreviewDim)
+		if l.compact {
+			drawCompactEmpty(cv, l, g.row, g.col, g.title, border)
+		} else {
+			drawFrame(cv, l, g.row, g.col, frameDashed, border)
+			x, y := l.colX(g.col), l.rowY[g.row]
+			for i, line := range titleRows(g.title, l.cardW-4) {
+				cv.text(x+2, y+1+i, line, stPreviewDim)
+			}
 		}
 	}
 
@@ -662,6 +703,14 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	if v.lit != "" {
 		base = stEdgeDim
 	}
+	// Compact cards have no borders to carry ports: an edge just starts
+	// under its card, and its arrowhead goes on its last cell, over the
+	// target, once the lines are drawn.
+	type arrow struct {
+		p  point
+		st style
+	}
+	var arrows []arrow
 	for _, rt := range routes {
 		st := base
 		switch {
@@ -705,6 +754,12 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 				}
 			}
 		}
+		if l.compact {
+			if len(rt.path) > 0 {
+				arrows = append(arrows, arrow{rt.path[len(rt.path)-1], st})
+			}
+			continue
+		}
 		port := '┬'
 		if lit {
 			port = '┰'
@@ -724,5 +779,95 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 			cv.set(k%cv.w, k/cv.w, edgeRune(v), base)
 		}
 	}
+	for _, a := range arrows { // lit ones last, so they win a shared cell
+		if a.st == base {
+			cv.set(a.p.x, a.p.y, '▼', a.st)
+		}
+	}
+	for _, a := range arrows {
+		if a.st != base {
+			cv.set(a.p.x, a.p.y, '▼', a.st)
+		}
+	}
 	return cv
+}
+
+// compactStyle turns the border style a full card would get into the band
+// a compact card is drawn as.
+func compactStyle(border style, done bool) style {
+	switch {
+	case done && border != stBorder && border != stBorderDone:
+		return stCardDoneSel
+	case done:
+		return stCardDone
+	case border == stBorderSel:
+		return stCardSel
+	case border == stBorderTarget:
+		return stCardTarget
+	case border == stBorderMove:
+		return stCardMove
+	}
+	return stCard
+}
+
+// drawCompactCard draws a card as a one-line band: the title (✓ first
+// when done), and at the right end the task list's progress and ↗ when it
+// has a link. Meters and the completion comment are left out; K shows
+// them.
+func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats) {
+	x, y, w := l.colX(n.Col), l.rowY[n.Row], l.cardW
+	fill := st // the strikethrough of a done title, not of the whole band
+	switch st {
+	case stCardDone:
+		fill = stCardDoneBand
+	case stCardDoneSel:
+		fill = stCardSel
+	}
+	for i := 0; i < w; i++ {
+		cv.set(x+i, y, ' ', fill)
+	}
+	right, rst := "", fill
+	if p := ns.progress(); p != "" {
+		right = p
+		if st == stCard {
+			rst = stCardChecks
+			if ns.checked == ns.checks {
+				rst = stCardChecksDone
+			}
+		}
+	}
+	if n.URL != "" {
+		right += "↗"
+	}
+	rw := runewidth.StringWidth(right)
+	if rw > w/2 {
+		right, rw = "", 0
+	}
+	label := n.Title
+	if n.Done {
+		label = "✓ " + label
+	}
+	if label == "" {
+		label = "…"
+	}
+	room := w - 2
+	if rw > 0 {
+		room -= rw + 1
+	}
+	cv.text(x+1, y, runewidth.Truncate(label, max(room, 1), "…"), st)
+	if rw > 0 {
+		cv.text(x+w-1-rw, y, right, rst)
+	}
+}
+
+// drawCompactEmpty marks an empty cell as a dashed line: the cursor, or
+// with a title, the ghost of a yanked node.
+func drawCompactEmpty(cv *canvas, l layout, row, col int, title string, st style) {
+	x, y, w := l.colX(col), l.rowY[row], l.cardW
+	for i := 0; i < w; i++ {
+		cv.set(x+i, y, '╌', st)
+	}
+	if title != "" {
+		cv.text(x+1, y, " "+runewidth.Truncate(title, max(w-4, 1), "…")+" ", stPreviewDim)
+	}
 }

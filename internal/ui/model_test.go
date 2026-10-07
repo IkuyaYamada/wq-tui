@@ -627,7 +627,7 @@ func TestScrollKeys(t *testing.T) {
 	m := New(t.TempDir(), b)
 	n, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 22}) // 20 body lines = 4 rows
 	m = n.(Model)
-	rowH := cardH + laneH
+	rowH := fullCardH + laneH
 
 	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlD})
 	if m.row != 2 || m.scroll != 2*rowH {
@@ -646,11 +646,11 @@ func TestScrollKeys(t *testing.T) {
 		t.Errorf("zt: scroll %d", m.scroll)
 	}
 	m = press(t, m, "z", "b")
-	if want := 10*rowH + cardH + 1 - m.bodyHeight(); m.scroll != want {
+	if want := 10*rowH + fullCardH + 1 - m.bodyHeight(); m.scroll != want {
 		t.Errorf("zb: scroll %d want %d", m.scroll, want)
 	}
 	m = press(t, m, "z", "z")
-	if want := 10*rowH + cardH/2 - m.bodyHeight()/2; m.scroll != want {
+	if want := 10*rowH + fullCardH/2 - m.bodyHeight()/2; m.scroll != want {
 		t.Errorf("zz: scroll %d want %d", m.scroll, want)
 	}
 	if m.row != 10 {
@@ -709,7 +709,7 @@ func TestCtrlECtrlYScrollWithoutMovingCursor(t *testing.T) {
 	m := New(t.TempDir(), b)
 	n, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 22}) // 4 rows visible
 	m = n.(Model)
-	rowH := cardH + laneH
+	rowH := fullCardH + laneH
 	m = press(t, m, "j", "j") // cursor on row 2, scroll 0
 
 	m = pressKey(m, tea.KeyMsg{Type: tea.KeyCtrlE})
@@ -1236,5 +1236,23 @@ func TestYPCopiesStrategyPath(t *testing.T) {
 	m = press(t, m, "l", "y", "p")
 	if len(copied) != 1 {
 		t.Errorf("empty cell copied %v", copied)
+	}
+}
+
+func TestCompactModelScrollsByCompactRows(t *testing.T) {
+	b := &board.Board{}
+	for r := range 40 {
+		b.Nodes = append(b.Nodes, board.Node{ID: fmt.Sprint(r), Title: fmt.Sprint(r), Row: r})
+	}
+	m := New(t.TempDir(), b, WithCompact())
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 22})
+	m = n.(Model)
+	m = press(t, m, "gg", "ctrl+d")
+	if rows := m.bodyHeight() / 2 / (compactCardH + laneH); m.row != rows {
+		t.Errorf("C-d should move half a screen of compact rows (%d), got row %d", rows, m.row)
+	}
+	m = press(t, m, "G")
+	if !strings.Contains(m.View(), "39") {
+		t.Error("the last row should be on screen")
 	}
 }

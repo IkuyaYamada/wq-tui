@@ -59,6 +59,33 @@ Data lives in `~/wq` (override with `WQ_DIR`):
 Plain files, so the directory can be a git repo of its own; see
 [Backup and other machines](#backup-and-other-machines).
 
+## Compact board
+
+`wqc` is the same board with one-line cards, for when the board grows tall:
+a row takes two lines instead of five, so well over twice as many fit on the
+screen. Same data, same keys; it is the same binary, linked under another
+name (or run with `WQ_COMPACT=1`):
+
+```sh
+ln -sf "$PWD/wq" ~/.local/bin/wqc
+```
+
+```
+ スキーマ      2/5   API
+   └──────────────────▼
+ 移行               テスト
+   ▼
+ リリース
+```
+
+Each card is a shaded band holding its title; the cursor, a selection and a
+connect target colour the whole band. A done card reads `✓` and is struck
+through; the task list's progress and `↗` sit at the band's right end.
+Edges start right under a card and end in `▼` just above the target.
+Frames, necks and session breaks are drawn as on the full board. Left out:
+the second title line, the maturity meters and the completion comment
+(`K` shows them all).
+
 ## Keys
 
 | Key | Action |

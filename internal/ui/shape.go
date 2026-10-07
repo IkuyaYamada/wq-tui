@@ -42,7 +42,7 @@ func layoutFrames(b *board.Board, l layout) []frame {
 			continue
 		}
 		x0, y0 := l.colX(n.Col), l.rowY[n.Row]
-		for y := y0; y < y0+cardH; y++ {
+		for y := y0; y < y0+l.cardH; y++ {
 			for x := x0; x < x0+l.cardW; x++ {
 				taken[point{x, y}] = true
 			}
@@ -171,7 +171,7 @@ func pieces(l layout, cells map[[2]int]bool) []piece {
 		for _, cell := range p.cells {
 			r, col := cell[0], cell[1]
 			x0, x1 := l.colX(col)-1, l.colX(col)+l.cardW
-			y1 := l.rowY[r] + cardH
+			y1 := l.rowY[r] + l.cardH
 			if cells[[2]int{r + 1, col}] && r+1 < len(l.rowY) {
 				y1 = l.rowY[r+1] - 1
 			}
@@ -283,7 +283,7 @@ func neckPath(l layout, a, z piece, taken map[point]bool) []point {
 			ylo, yhi = min(ylo, q.y), max(yhi, q.y)
 		}
 	}
-	ylo, yhi = max(ylo-2*cardH, 0), min(yhi+2*cardH, l.height-1)
+	ylo, yhi = max(ylo-2*l.cardH, 0), min(yhi+2*l.cardH, l.height-1)
 	w := l.width
 	// States are (cell, direction of the last step).
 	steps := [4]point{{0, -1}, {0, 1}, {-1, 0}, {1, 0}}
