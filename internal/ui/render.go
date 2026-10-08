@@ -378,12 +378,10 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	}
 	drawFrame(cv, l, n.Row, n.Col, f, border)
 	x, y, w := l.colX(n.Col), l.rowY[n.Row], l.cardW
-	// How much is written: strategy, then thread, as bars on the bottom
+	// How much of the strategy is written, as a bar on the bottom
 	// border's left end (edge ports sit further in).
-	for i, r := range st.meters() {
-		if r != 0 {
-			cv.set(x+1+i, y+l.cardH-1, r, stMeter)
-		}
+	if r := st.meter(); r != 0 {
+		cv.set(x+1, y+l.cardH-1, r, stMeter)
 	}
 	end := x + w - 1 // the task list's progress ends before the corner
 	if n.URL != "" {

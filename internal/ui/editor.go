@@ -7,12 +7,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 //go:embed wq.vim
@@ -81,22 +79,11 @@ func (c vimCmd) SetStdin(r io.Reader)  { c.Stdin = r }
 func (c vimCmd) SetStdout(w io.Writer) { c.Stdout = tty(w) }
 func (c vimCmd) SetStderr(w io.Writer) { c.Stderr = w }
 
-// vimString quotes s as a single-quoted Vim string.
-func vimString(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
-
-// openNode opens the node in vim: strategy on the left, the thread index
-// top right and the picked entry below it (see wq.vim).
+// openNode opens the node's strategy.md in vim, full screen (see wq.vim).
 func openNode(dir string, n board.Node) tea.Cmd {
 	fail := func(err error) tea.Cmd { return func() tea.Msg { return editorDoneMsg{err: err} } }
 	strategy, err := strategyPath(dir, n)
 	if err != nil {
-		return fail(err)
-	}
-	nodeDir := board.NodeDir(dir, n.ID)
-	if err := thread.Migrate(nodeDir); err != nil {
-		return fail(err)
-	}
-	if err := os.MkdirAll(thread.Dir(nodeDir), 0o755); err != nil {
 		return fail(err)
 	}
 	script, err := vimScriptPath()
@@ -107,16 +94,9 @@ func openNode(dir string, n board.Node) tea.Cmd {
 	if vim == "" {
 		vim = "vim"
 	}
-	cmd := exec.Command(vim,
-		"--cmd", "let g:wq_thread_dir = "+vimString(thread.Dir(nodeDir)),
-		"-S", script,
-		strategy,
-	)
+	cmd := exec.Command(vim, "-S", script, strategy)
 	return tea.Exec(vimCmd{cmd}, func(err error) tea.Msg {
 		step, err := exitStep(err)
-		if derr := thread.DropBlank(nodeDir); err == nil {
-			err = derr
-		}
 		return editorDoneMsg{id: n.ID, strategy: strategy, step: step, err: err}
 	})
 }

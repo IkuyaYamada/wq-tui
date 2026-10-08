@@ -12,7 +12,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 // press feeds keys the way a terminal would: named keys in <>, text as runes.
@@ -90,9 +89,8 @@ func TestRhythmicAddConnectComplete(t *testing.T) {
 	if n := m.selected(); !n.Done {
 		t.Errorf("space did not complete %s", n.Title)
 	}
-	entries, _ := thread.List(board.NodeDir(dir, m.selected().ID))
-	if len(entries) != 1 || entries[0].Summary() != "Completed" {
-		t.Errorf("thread missing completion entry: %+v", entries)
+	if n := m.selected(); n.DoneAt == nil {
+		t.Errorf("completion time missing: %+v", n)
 	}
 
 	m = press(t, m, "u", "u")
@@ -347,9 +345,11 @@ func TestCompletingAsksForAComment(t *testing.T) {
 	if !m.selected().Done {
 		t.Fatal("enter should complete")
 	}
-	entries, _ := thread.List(board.NodeDir(dir, id))
-	if len(entries) != 1 || entries[0].Summary() != "Completed: スキーマ確定" {
-		t.Errorf("entries %+v", entries)
+	if n := m.b.Node(id); n.DoneNote != "スキーマ確定" || n.DoneAt == nil {
+		t.Errorf("completion %+v", n)
+	}
+	if _, err := os.Stat(board.NodeDir(dir, id)); err == nil {
+		t.Error("completing should not write files")
 	}
 
 	// Reopening does not ask.
@@ -805,7 +805,7 @@ func TestGGGoesToFirstOpenNode(t *testing.T) {
 	}
 }
 
-func TestKPreviewsStrategyAndThread(t *testing.T) {
+func TestKPreviewsStrategy(t *testing.T) {
 	dir := t.TempDir()
 	m := New(dir, &board.Board{})
 	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -816,15 +816,14 @@ func TestKPreviewsStrategyAndThread(t *testing.T) {
 	os.MkdirAll(nodeDir, 0o755)
 	os.WriteFile(filepath.Join(nodeDir, "strategy.md"), []byte("---\ntitle: 設計\n---\n\nスキーマから決める\n"), 0o644)
 	at := time.Date(2026, 10, 1, 14, 3, 0, 0, time.Local)
-	thread.Add(nodeDir, at.Add(time.Hour), "ログ見たら500多発\n")
-	thread.Add(nodeDir, at, "クエリ流した\n")
+	m.b.Node(id).Done, m.b.Node(id).DoneAt, m.b.Node(id).DoneNote = true, &at, "スキーマ確定"
 
 	m = press(t, m, "K")
 	view := m.View()
 	t.Log("\n" + view)
-	iS, iA, iB := strings.Index(view, "スキーマから決める"), strings.Index(view, "クエリ流した"), strings.Index(view, "ログ見たら500多発")
-	if iS < 0 || iA < iS || iB < iA {
-		t.Fatalf("want strategy, then entries oldest first: %d %d %d", iS, iA, iB)
+	iD, iS := strings.Index(view, "✓ done 10/01 14:03 — スキーマ確定"), strings.Index(view, "スキーマから決める")
+	if iD < 0 || iS < iD {
+		t.Fatalf("want when it was done and the comment, then the strategy: %d %d", iD, iS)
 	}
 	if strings.Contains(view, "title: 設計") {
 		t.Error("the header should be stripped")

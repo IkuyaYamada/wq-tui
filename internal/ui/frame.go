@@ -9,7 +9,6 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 // selectedFrame is the frame the cursor stands on, if any.
@@ -98,7 +97,7 @@ func (m *Model) keyFrame(key string, g *board.Group) (cmd tea.Cmd, done bool) {
 }
 
 // doneAll completes every node in ids, or reopens them all when they are
-// all done already, logging each in its thread.
+// all done already.
 func (m *Model) doneAll(ids []string) {
 	all := true
 	for _, id := range ids {
@@ -108,7 +107,6 @@ func (m *Model) doneAll(ids []string) {
 	}
 	m.checkpoint()
 	now := time.Now()
-	var changed []string
 	for _, id := range ids {
 		n := m.b.Node(id)
 		if n == nil || n.Done == !all {
@@ -118,21 +116,8 @@ func (m *Model) doneAll(ids []string) {
 		if n.Done {
 			n.DoneAt = &now
 		}
-		changed = append(changed, id)
 	}
 	m.save()
-	if m.stale {
-		return
-	}
-	event := "Completed\n"
-	if all {
-		event = "Reopened\n"
-	}
-	for _, id := range changed {
-		if _, err := thread.Add(board.NodeDir(m.dir, id), now, event); err != nil {
-			m.msg = "thread: " + err.Error()
-		}
-	}
 }
 
 // decompose breaks the node under the cursor up into a frame (gs): the

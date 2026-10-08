@@ -1,8 +1,8 @@
 # wq-tui
 
 A keyboard-driven six-column board for the terminal. Everything you are
-working on lives on one grid; each node opens to its **strategy** (left) and a
-**thread** of short timestamped entries (right), all edited in vim.
+working on lives on one grid; each node opens to its **strategy**, a Markdown
+page edited in vim.
 
 Successor to the web-based `workflow-queue`, keeping its grid rules and keymap.
 
@@ -53,8 +53,10 @@ Data lives in `~/wq` (override with `WQ_DIR`):
 ```
 ~/wq/board.json                 # nodes (title, row, col, done) and edges
 ~/wq/nodes/<id>/strategy.md
-~/wq/nodes/<id>/thread/20261001-152003.md   # one file per thread entry
 ```
+
+Older versions kept a thread of timestamped entries per node in
+`nodes/<id>/thread/`; wq no longer reads it and leaves it where it is.
 
 Plain files, so the directory can be a git repo of its own; see
 [Backup and other machines](#backup-and-other-machines).
@@ -67,7 +69,7 @@ again (like closing and opening a fold in vim), through three steps:
 | Step | A row takes | Card |
 | --- | --- | --- |
 | full | 5 lines | borders, two title lines, the completion comment |
-| slim | 3 lines | the title in the top border, meters on the bottom one |
+| slim | 3 lines | the title in the top border, the meter on the bottom one |
 | compact | 2 lines | a one-line band |
 
 The next wq starts at the step you left it at. It is a setting of the
@@ -91,7 +93,7 @@ connect target colour the whole band. A done card reads `✓` and is struck
 through; the task list's progress and `↗` sit at the band's right end.
 Edges start right under a card and end in `▼` just above the target.
 Frames, necks and session breaks are drawn as on the full board. Left out:
-the second title line, the maturity meters and the completion comment
+the second title line, the maturity meter and the completion comment
 (`K` shows them all).
 
 ## Keys
@@ -110,13 +112,13 @@ the second title line, the maturity meters and the completion comment
 | `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
-| `yy` / `p` | Copy the node under the cursor: a dashed ghost then shows where it would go (the empty cell nearest the cursor) and follows the cursor; `p` pastes a copy there (title, url and strategy; open, no edges, its own thread) and moves onto it. The copy stays held for more `p`; `Esc` lets it go |
+| `yy` / `p` | Copy the node under the cursor: a dashed ghost then shows where it would go (the empty cell nearest the cursor) and follows the cursor; `p` pastes a copy there (title, url and strategy; open, no edges) and moves onto it. The copy stays held for more `p`; `Esc` lets it go |
 | `yp` | Copy the absolute path of the strategy.md under the cursor (the frame's when one is selected) to the clipboard: pbcopy / clip.exe / wl-copy / xclip / xsel, or OSC 52 over ssh or when none is found. Works on a stale board too |
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it, `=` organizes it |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
-| `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), logs `Completed: <comment>` to the thread and shows the comment in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away (`Reopened`) and drops the comment |
-| `Enter` | Open the node in vim (strategy, thread index, entry) |
-| `K` | Preview the node beside its card: strategy, then the thread oldest first, read-only. It follows the cursor; `Ctrl+d` / `Ctrl+u` scroll it, `K` / `Esc` close it. For quick fixes without vim, `i` edits the strategy body in place and `a` writes a new thread entry: `Enter` is a new line, `Esc` (or `Ctrl+s`) saves and closes, `Ctrl+c` throws the changes away (asking once if anything changed). Older entries are edited in vim |
+| `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), keeps it with the time of completion and shows it in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away and drops the comment |
+| `Enter` | Open the node's strategy in vim, full screen |
+| `K` | Preview the node beside its card, read-only: when it was completed and the comment, if done, then the strategy. It follows the cursor; `Ctrl+d` / `Ctrl+u` scroll it, `K` / `Esc` close it. For quick fixes without vim, `i` edits the strategy body in place: `Enter` is a new line, `Esc` (or `Ctrl+s`) saves and closes, `Ctrl+c` throws the changes away (asking once if anything changed) |
 | `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
 | `[` `Space` / `]` `Space` | Open an empty row above / below the cursor's row (rows below move down; the cursor stays on its node) |
@@ -146,7 +148,7 @@ crosses.
 
 A frame is a line drawn around some nodes to mark them as one meaningful
 cluster, say the pieces a node that grew too big was broken into. It has a
-title and, like a node, its own strategy and thread (`nodes/<id>/`). Frames
+title and, like a node, its own strategy (`nodes/<id>/strategy.md`). Frames
 live in board.json as `groups` and do not nest.
 
 The line hugs the members, so a frame takes whatever shape they make: an L,
@@ -193,25 +195,24 @@ constrains moves and edges. `o` / `O` from a member, and `a` on a member or
 on an empty cell the members wall in all round, add the new node to that
 frame. Edges cross frames and necks but never run along them.
 
-## Maturity meters
+## Maturity meter
 
-Two small bars on the left end of a card's bottom border show how much has
-been written on it, read when wq starts, on `R` and when vim closes:
+A small bar on the left end of a card's bottom border shows how much of its
+strategy is written, read when wq starts, on `R` and when vim closes:
 
 ```
-╰▄▆──────────────╯   strategy ▄ , thread ▆
+╰▄───────────────╯
 ```
 
-| Bar | Strategy (non-space characters, header excluded) | Thread (entries) |
-| --- | --- | --- |
-| none | 0 | 0 |
-| `▂` | 1–99 | 1 |
-| `▄` | 100–399 | 2–4 |
-| `▆` | 400–999 | 5–9 |
-| `█` | 1000+ | 10+ |
+| Bar | Strategy (non-space characters, header excluded) |
+| --- | --- |
+| none | 0 |
+| `▂` | 1–99 |
+| `▄` | 100–399 |
+| `▆` | 400–999 |
+| `█` | 1000+ |
 
-The Completed / Reopened lines wq logs itself do not count. `K` gives the
-exact numbers at the top of the preview.
+`K` gives the exact number at the top of the preview.
 
 ## Organizing
 
@@ -232,8 +233,8 @@ header shows `⟳ changed in another wq — R to reload` and every key that woul
 change the board is refused (moving around, `gx`, opening a node and `q` still
 work). A save that would overwrite the other wq's change is not written
 either. `R` loads the current board.json and clears the undo history, so undo
-can never roll back the other wq's work. Thread entries and strategy files
-are separate per node and are not affected; vim's own swap-file warning
+can never roll back the other wq's work. Strategy files are separate per
+node and are not affected; vim's own swap-file warning
 covers the same file being open twice.
 
 wq is meant to grow while in use, so an older build is often still open next
@@ -284,8 +285,8 @@ other wq processes on the same disk; it cannot see a commit waiting on
 another machine. If you forget to pull and both sides changed `board.json`,
 git reports a conflict on pull: keep one side (`git checkout --theirs
 board.json` or `--ours`) and redo the few moves by hand, since a hand-merged
-board.json can easily end up with two nodes in one cell. Strategy and thread
-files rarely conflict, as each entry is its own file.
+board.json can easily end up with two nodes in one cell. Strategy files
+rarely conflict, as each node has its own.
 
 A synced folder (iCloud Drive, Dropbox) also works for one person, but on a
 conflict it quietly writes a "conflicted copy" of board.json that wq never
@@ -301,33 +302,16 @@ reads, so changes can go missing unnoticed; git makes the conflict visible.
 
 ## Opening a node
 
-`Enter` on a node opens it straight in vim as two panes, cursor in the strategy on the
-left, the thread on the right. The thread pane shows the entry index; `Enter`
-opens an entry in that same pane and `Esc` (normal mode) saves it and goes
-back to the index. This is the one place `Esc` keeps what you typed: on the
-board's prompts (`title>`, `done>`, `break>`) it cancels. The status lines
-say which.
+`Enter` on a node opens its `strategy.md` in vim, full screen.
 
-```
- strategy.md            │  10/01 14:03  クエリ流した
-                        │▸ 10/01 15:20  ログ見たら500多発   ← Enter opens it here
-                        │  10/01 16:43  Completed: スキーマ確定
-```
+| Key | Action |
+| --- | --- |
+| `q` | Save and return to the board |
+| `C-j` / `C-k` | Save and open the next / previous node (the one `w` / `b` would pick) |
 
-| Key | Where | Action |
-| --- | --- | --- |
-| `Enter` / `o` | index | Open the entry under the cursor |
-| `a` | index | New entry, in insert mode (never written if left untouched) |
-| `D` | index | Delete the entry (after a prompt; moved to `thread/.trash/`) |
-| `Esc` | entry | Save and return to the index (`<nowait>`, so an `<Esc><Esc>` map does not delay it) |
-| `-` | anywhere | Show the index in the thread pane |
-| `C-w w` | anywhere | Switch panes |
-| `q` | anywhere | Save everything and return to the board |
-| `C-j` / `C-k` | anywhere | Save everything and open the next / previous node (the one `w` / `b` would pick) |
-
-Entries saved empty are removed on the way out. The layout comes from
-`internal/ui/wq.vim`, embedded in the binary and sourced with `vim -S`, so it
-only applies to these sessions. `WQ_VIM` overrides the vim binary.
+These keys come from `internal/ui/wq.vim`, embedded in the binary and
+sourced with `vim -S`, so they only apply to these sessions. `WQ_VIM`
+overrides the vim binary.
 
 `strategy.md` starts with a small header that carries the node's title and
 a link, blank until you fill it in:
@@ -346,10 +330,6 @@ undoable change (a blank title is ignored; a blank url clears the link).
 `gx` on the board then opens the url (`https://` is added to a bare host). `board.json` stays the
 source of truth: the header is rewritten with the current title every time
 the node opens. Other `key: value` lines you add to the header are kept.
-
-An older single-file `thread.md` is split into entries (one per `## time`
-heading or `- time Completed` line) the first time the node is opened, and
-kept as `thread.md.migrated`.
 
 ## Input method (macOS)
 

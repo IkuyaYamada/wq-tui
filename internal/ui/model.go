@@ -20,7 +20,6 @@ import (
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
 	"github.com/IkuyaYamada/wq-tui/internal/ime"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 type mode int
@@ -92,16 +91,15 @@ type Model struct {
 	routeKey string
 	stats    map[string]nodeStats // how much each node has written, for the meters
 
-	// preview floats the cursor node's strategy and thread beside it (K).
+	// preview floats the cursor node's strategy beside it (K).
 	// previewText is read once per node, not on every frame.
 	preview       bool
 	previewID     string
 	previewText   []pline
 	previewScroll int
 
-	// The preview turns into an editor with i (strategy) or a (new entry).
+	// The preview turns into an editor for the strategy with i.
 	edit       textarea.Model
-	editKind   editKind
 	editOrig   string
 	editWarned bool // ^c was pressed once on unsaved changes
 	editRows   int  // the preview's text height when editing began
@@ -656,9 +654,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			m.preview = false
 			return nil
 		case "i":
-			return m.startEdit(editStrategy)
-		case "a":
-			return m.startEdit(editEntry)
+			return m.startEdit()
 		case "ctrl+d", "ctrl+u":
 			if p, ok := m.previewBox(); ok {
 				step := max((p.h-2)/2, 1)
@@ -1075,7 +1071,7 @@ func (m *Model) pasteCell() (row, col int) { return m.b.NearestEmpty(m.row, m.co
 
 // paste puts a copy of the yanked node where the ghost shows and moves the
 // cursor onto it, as vim's p does. It starts open, with its own empty
-// thread, and joins the frame the cursor is in. The yank stays held, so p
+// strategy, and joins the frame the cursor is in. The yank stays held, so p
 // can paste again.
 func (m *Model) paste() {
 	if m.yank == nil {
@@ -1311,33 +1307,18 @@ func (m *Model) keyConnect(k tea.KeyMsg) {
 	}
 }
 
-// toggleDone flips the done flag and logs it as a thread entry, with the
-// comment after the event: "Completed: <comment>".
+// toggleDone flips the done flag, keeping when it was completed and the
+// completion comment on the node.
 func (m *Model) toggleDone(comment string) {
 	m.checkpoint()
 	n := m.selected()
 	n.Done = !n.Done
-	event := "Reopened"
-	n.DoneAt = nil
-	n.DoneNote = ""
-	if n.Done {
-		n.DoneNote = comment
-	}
+	n.DoneAt, n.DoneNote = nil, ""
 	if n.Done {
 		now := time.Now()
-		n.DoneAt = &now
-		event = "Completed"
+		n.DoneAt, n.DoneNote = &now, comment
 	}
 	m.save()
-	if m.stale {
-		return // not saved, so do not log it either
-	}
-	if comment != "" {
-		event += ": " + comment
-	}
-	if _, err := thread.Add(board.NodeDir(m.dir, n.ID), time.Now(), event+"\n"); err != nil {
-		m.msg = "thread: " + err.Error()
-	}
 }
 
 func (m *Model) bodyHeight() int { return max(m.height-2, 1) }
@@ -1412,7 +1393,7 @@ func (m Model) View() string {
 			h = "FRAME  m move · x unframe · c color · ␣ done all · i rename · K preview · ⏎ open · j back"
 		}
 		if m.preview && m.mode == modeNormal {
-			h = "PREVIEW  hjkl follow the cursor · ^d/^u scroll · i edit strategy · a new entry · ⏎ open in vim · K/esc close"
+			h = "PREVIEW  hjkl follow the cursor · ^d/^u scroll · i edit strategy · ⏎ open in vim · K/esc close"
 		}
 		footer = dimStyle.Render(runewidth.Truncate(h, max(m.width-1, 1), "…"))
 	}
@@ -1479,8 +1460,11 @@ func (m *Model) refreshPreview() {
 		m.previewID = n.ID
 		st := readStats(m.dir, n.ID)
 		m.stats[n.ID] = st
-		head := pline{fmt.Sprintf("strategy %d字 · thread %d件", st.chars, st.entries), stPreviewDim}
-		m.previewText = append([]pline{head, {"", stPlain}}, previewLines(m.dir, *n)...)
+		head := []pline{{fmt.Sprintf("strategy %d字", st.chars), stPreviewDim}}
+		if done := m.b.Node(n.ID); done != nil && done.Done {
+			head = append(head, doneLine(*done))
+		}
+		m.previewText = append(append(head, pline{"", stPlain}), previewLines(m.dir, *n)...)
 		m.previewScroll = 0
 	}
 }

@@ -9,7 +9,7 @@ import (
 // It marks a meaningful cluster: it takes no cell of its own, never
 // constrains moves or edges, and its frame hugs its members, so it follows
 // them wherever they go. Like a node it has an id, so it keeps its own
-// strategy and thread under nodes/<id>/.
+// strategy under nodes/<id>/.
 type Group struct {
 	ID        string    `json:"id,omitempty"`
 	Title     string    `json:"title,omitempty"`
@@ -126,7 +126,7 @@ func (b *Board) RemoveGroup(id string) {
 }
 
 // Decompose breaks node id up into a frame: the frame takes over its id,
-// title, url and creation time (and so its strategy and thread), and child
+// title, url and creation time (and so its strategy), and child
 // takes its cell and its edges as the frame's first member.
 func (b *Board) Decompose(id string, child Node) error {
 	n := b.Node(id)

@@ -4,35 +4,22 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
-// editKind is what the in-preview editor writes to.
-type editKind int
-
-const (
-	editStrategy editKind = iota // the strategy body (i)
-	editEntry                    // a new thread entry (a)
-)
-
-// startEdit turns the preview into an editor for the cursor's node, for
-// quick fixes without leaving the board.
-func (m *Model) startEdit(kind editKind) tea.Cmd {
+// startEdit turns the preview into an editor for the strategy of the
+// cursor's node, for quick fixes without leaving the board.
+func (m *Model) startEdit() tea.Cmd {
 	n := m.focus()
 	if n == nil {
 		return nil
 	}
-	text := ""
-	if kind == editStrategy {
-		text = strategyBody(m.dir, *n)
-	}
+	text := strategyBody(m.dir, *n)
 	ta := textarea.New()
 	ta.ShowLineNumbers = false
 	ta.Prompt = ""
@@ -47,7 +34,7 @@ func (m *Model) startEdit(kind editKind) tea.Cmd {
 	if p, ok := m.previewBox(); ok {
 		m.editRows = p.h - 2
 	}
-	m.edit, m.editKind, m.editOrig, m.editWarned = ta, kind, text, false
+	m.edit, m.editOrig, m.editWarned = ta, text, false
 	m.mode = modeEdit
 	m.sizeEditor()
 	m.ime.Select(m.imePrev)
@@ -139,17 +126,7 @@ func (m *Model) saveEdit() {
 	if n == nil || m.edit.Value() == m.editOrig {
 		return
 	}
-	var err error
-	switch m.editKind {
-	case editStrategy:
-		err = writeStrategyBody(m.dir, *n, text)
-	case editEntry:
-		if strings.TrimSpace(text) == "" {
-			return
-		}
-		_, err = thread.Add(board.NodeDir(m.dir, n.ID), time.Now(), text+"\n")
-	}
-	if err != nil {
+	if err := writeStrategyBody(m.dir, *n, text); err != nil {
 		m.msg = "save: " + err.Error()
 		return
 	}
@@ -185,9 +162,6 @@ func (m *Model) drawEditor(screen *canvas) []string {
 		return out
 	}
 	title := m.focus().Title + " · strategy"
-	if m.editKind == editEntry {
-		title = m.focus().Title + " · new entry"
-	}
 	p.text = nil
 	p.draw(screen, title, 0)
 	rows := strings.Split(m.edit.View(), "\n")

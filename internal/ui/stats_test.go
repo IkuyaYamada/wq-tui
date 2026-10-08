@@ -10,29 +10,22 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
-func TestStatsCountWritingNotLogs(t *testing.T) {
+func TestStatsCountStrategyCharacters(t *testing.T) {
 	dir := t.TempDir()
 	nodeDir := board.NodeDir(dir, "a")
 	os.MkdirAll(nodeDir, 0o755)
 	os.WriteFile(filepath.Join(nodeDir, "strategy.md"), []byte("---\ntitle: 長いタイトル\n---\n\nスキーマ から\n決める\n"), 0o644)
-	at := time.Date(2026, 10, 1, 14, 0, 0, 0, time.Local)
-	thread.Add(nodeDir, at, "クエリ流した\n")
-	thread.Add(nodeDir, at.Add(time.Minute), "Completed: スキーマ確定\n")
-	thread.Add(nodeDir, at.Add(2*time.Minute), "Reopened\n")
-	thread.Add(nodeDir, at.Add(3*time.Minute), "Completed: 見直し\n続きはここに\n")
 
-	got := readStats(dir, "a")
-	if got.chars != 9 || got.entries != 2 {
-		t.Errorf("stats %+v, want 9 chars (header and spaces left out) and 2 entries", got)
+	if got := readStats(dir, "a"); got.chars != 9 {
+		t.Errorf("stats %+v, want 9 chars (header and spaces left out)", got)
 	}
-	if m := (nodeStats{}).meters(); m != [2]rune{0, 0} {
+	if m := (nodeStats{}).meter(); m != 0 {
 		t.Errorf("nothing written: %q", m)
 	}
-	if m := (nodeStats{chars: 1000, entries: 3}).meters(); m != [2]rune{'█', '▄'} {
-		t.Errorf("meters %q", m)
+	if m := (nodeStats{chars: 1000}).meter(); m != '█' {
+		t.Errorf("meter %q", m)
 	}
 }
 
@@ -54,7 +47,7 @@ func TestMetersOnCards(t *testing.T) {
 		t.Errorf("b's card has nothing written and no bars")
 	}
 	m = press(t, m, "K")
-	if !strings.Contains(m.View(), "strategy 150字 · thread 0件") {
+	if !strings.Contains(m.View(), "strategy 150字") || strings.Contains(m.View(), "thread") {
 		t.Errorf("preview should give the counts:\n%s", m.View())
 	}
 }
@@ -102,21 +95,11 @@ func TestEditInPreview(t *testing.T) {
 		t.Errorf("back in the refreshed preview:\n%s", m.View())
 	}
 
-	// a writes a new thread entry, several lines allowed.
-	m = press(t, m, "a", "一行目", "<enter>", "二行目")
+	// ^s saves too.
+	m = press(t, m, "i", "☆")
 	m = pressKey(m, ctrlS)
-	entries, _ := thread.List(nodeDir)
-	if len(entries) != 1 || entries[0].Body != "一行目\n二行目\n" {
-		t.Fatalf("entries %+v", entries)
-	}
-	if !strings.Contains(m.View(), "thread 1件") {
-		t.Errorf("stats should be updated:\n%s", m.View())
-	}
-	// An empty entry is not written.
-	m = press(t, m, "a")
-	m = pressKey(m, ctrlS)
-	if entries, _ := thread.List(nodeDir); len(entries) != 1 {
-		t.Errorf("empty entry written: %d", len(entries))
+	if b, _ := os.ReadFile(strategy); !strings.Contains(string(b), "☆★スキーマから決める") || m.mode != modeNormal {
+		t.Errorf("^s should save: mode %v\n%s", m.mode, b)
 	}
 }
 

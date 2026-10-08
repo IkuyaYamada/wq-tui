@@ -52,7 +52,7 @@ func Save(dir string, b *Board) error {
 	return os.Rename(tmp, path)
 }
 
-// NodeDir holds a node's strategy.md and thread.md.
+// NodeDir holds a node's strategy.md.
 func NodeDir(dir, id string) string {
 	return filepath.Join(dir, "nodes", id)
 }

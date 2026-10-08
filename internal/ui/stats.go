@@ -9,22 +9,19 @@ import (
 	"unicode"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 // nodeStats is how much has been written on a node: characters in the
-// strategy body and thread entries written by hand, and the strategy's
-// task list: checkboxes, and how many of them are ticked.
+// strategy body, and the strategy's task list: checkboxes, and how many of
+// them are ticked.
 type nodeStats struct {
 	chars   int
-	entries int
 	checks  int
 	checked int
 }
 
-// readStats counts a node's writing without touching its files (no thread
-// migration): non-space characters of the strategy body, and thread entries
-// other than the Completed / Reopened lines wq logs itself.
+// readStats counts a node's writing: non-space characters of the strategy
+// body and its task list.
 func readStats(dir, id string) nodeStats {
 	nodeDir := board.NodeDir(dir, id)
 	var s nodeStats
@@ -39,14 +36,6 @@ func readStats(dir, id string) nodeStats {
 			}
 		}
 		s.checks, s.checked = countChecks(body)
-	}
-	files, _ := filepath.Glob(filepath.Join(thread.Dir(nodeDir), "*.md"))
-	for _, f := range files {
-		body, err := os.ReadFile(f)
-		if err != nil || isLogEntry(string(body)) || strings.TrimSpace(string(body)) == "" {
-			continue
-		}
-		s.entries++
 	}
 	return s
 }
@@ -85,18 +74,6 @@ func (s nodeStats) progress() string {
 	return fmt.Sprintf(" %d/%d ", s.checked, s.checks)
 }
 
-// isLogEntry reports whether body is a line wq wrote on completing or
-// reopening a node ("Completed", "Completed: <comment>", "Reopened").
-func isLogEntry(body string) bool {
-	body = strings.TrimSpace(body)
-	for _, ev := range []string{"Completed", "Reopened"} {
-		if body == ev || (strings.HasPrefix(body, ev+": ") && !strings.Contains(body, "\n")) {
-			return true
-		}
-	}
-	return false
-}
-
 func readAllStats(dir string, b *board.Board) map[string]nodeStats {
 	out := make(map[string]nodeStats, len(b.Nodes))
 	for _, n := range b.Nodes {
@@ -121,13 +98,9 @@ func meterRune(n int, steps [3]int) rune {
 	return '█'
 }
 
-var (
-	charSteps  = [3]int{100, 400, 1000} // strategy characters
-	entrySteps = [3]int{2, 5, 10}       // thread entries
-)
+// charSteps are the strategy lengths where the meter grows.
+var charSteps = [3]int{100, 400, 1000}
 
-// meters is the two-bar maturity gauge on a card's bottom border: strategy
-// length, then thread entries.
-func (s nodeStats) meters() [2]rune {
-	return [2]rune{meterRune(s.chars, charSteps), meterRune(s.entries, entrySteps)}
-}
+// meter is the maturity gauge on a card's bottom border: how long the
+// strategy is, or 0 when nothing is written.
+func (s nodeStats) meter() rune { return meterRune(s.chars, charSteps) }

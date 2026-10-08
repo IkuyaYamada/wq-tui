@@ -9,7 +9,6 @@ import (
 	"github.com/mattn/go-runewidth"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
-	"github.com/IkuyaYamada/wq-tui/internal/thread"
 )
 
 // pline is one line of the preview before wrapping.
@@ -18,8 +17,8 @@ type pline struct {
 	st   style
 }
 
-// previewLines reads a node the way vim shows it, as one page: the strategy
-// body (header stripped) and then every thread entry, oldest first.
+// previewLines reads a node's strategy body (header stripped) the way vim
+// shows it.
 func previewLines(dir string, n board.Node) []pline {
 	nodeDir := board.NodeDir(dir, n.ID)
 	var out []pline
@@ -38,22 +37,19 @@ func previewLines(dir string, n board.Node) []pline {
 			out = append(out, pline{l, stPlain})
 		}
 	}
-
-	entries, err := thread.List(nodeDir)
-	out = append(out, pline{"", stPlain}, pline{"── thread", stPreviewDim})
-	switch {
-	case err != nil:
-		out = append(out, pline{"thread: " + err.Error(), stPreviewDim})
-	case len(entries) == 0:
-		out = append(out, pline{"no entries yet", stPreviewDim})
-	}
-	for _, e := range entries {
-		out = append(out, pline{e.Time.Format("01/02 15:04"), stPreviewWhen})
-		for _, l := range strings.Split(strings.TrimSpace(e.Body), "\n") {
-			out = append(out, pline{"  " + l, stPlain})
-		}
-	}
 	return out
+}
+
+// doneLine says when a done node was completed, and with what comment.
+func doneLine(n board.Node) pline {
+	s := "✓ done"
+	if n.DoneAt != nil {
+		s += " " + n.DoneAt.Format("01/02 15:04")
+	}
+	if n.DoneNote != "" {
+		s += " — " + n.DoneNote
+	}
+	return pline{s, stPreviewWhen}
 }
 
 // wrapLines breaks each line to at most w cells, keeping its style.
