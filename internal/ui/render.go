@@ -204,8 +204,8 @@ var styles = map[style]lipgloss.Style{
 	stMeter:         lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
 	stChecks:        lipgloss.NewStyle().Foreground(lipgloss.Color("108")),
 	stChecksDone:    lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
-	stEdge:          lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
-	stEdgeDim:       lipgloss.NewStyle().Foreground(lipgloss.Color("237")), // the rest, while a node's edges are lit
+	stEdge:          lipgloss.NewStyle().Foreground(lipgloss.Color("242")),
+	stEdgeDim:       lipgloss.NewStyle().Foreground(lipgloss.Color("240")), // the rest while a node is lit, i.e. mostly: dark themes need it readable
 	stEdgeIn:        lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true),
 	stEdgeOut:       lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true),
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
