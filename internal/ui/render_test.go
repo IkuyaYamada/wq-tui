@@ -263,15 +263,19 @@ func TestEdgesPassOutsideAFrameOnTheEdgeColumn(t *testing.T) {
 		Edges:  []board.Edge{{From: "a", To: "d"}},
 		Groups: []board.Group{{ID: "g", Title: "枠", Members: []string{"b", "c", "x", "y"}}},
 	}
-	l := newLayout(b, 100).withFrames(b)
-	routes := routeEdges(b, l)
-	t.Log("\n" + plain(renderBoard(b, l, routes, view{cursorRow: -1})))
-	right := 0
-	for _, p := range routes[0].path {
-		right = max(right, p.x)
-	}
-	if right != l.width-1 {
-		t.Errorf("the edge should run down the outer lane (x=%d), reached x=%d", l.width-1, right)
+	for _, w := range []int{80, 100, 121, 160, 203} {
+		for _, d := range []density{densityFull, densityCompact} {
+			l := makeLayout(b, w, d).withFrames(b)
+			routes := routeEdges(b, l)
+			right := 0
+			for _, p := range routes[0].path {
+				right = max(right, p.x)
+			}
+			if right != l.width-1 {
+				t.Errorf("width %d %s: the edge should run down the outer lane (x=%d), reached x=%d\n%s",
+					w, densityNames[d], l.width-1, right, plain(renderBoard(b, l, routes, view{cursorRow: -1})))
+			}
+		}
 	}
 }
 

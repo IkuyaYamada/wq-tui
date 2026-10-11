@@ -21,13 +21,16 @@ type route struct {
 }
 
 // Routing cost knobs. Overlapping another edge in the same direction is
-// expensive so parallel edges spread out; crossing one is cheap.
+// expensive so parallel edges spread out; crossing one is cheap. Crossing
+// a frame's line costs enough that an edge goes round a frame rather than
+// through it when the way round is about as short.
 const (
-	costStep    = 1
-	costTurn    = 3
-	costOverlap = 12
-	costCross   = 1
-	costSide    = 40
+	costStep       = 1
+	costTurn       = 3
+	costOverlap    = 12
+	costCross      = 1
+	costCrossFrame = 6
+	costSide       = 40
 )
 
 // routeEdges lays out every edge with a turn-penalised shortest path that
@@ -218,6 +221,8 @@ func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map
 			if nd == moveDown {
 				if sides[k]&(bitU|bitD) == bitU|bitD {
 					c += costSide
+				} else if sides[k]&(bitL|bitR) != 0 {
+					c += costCrossFrame
 				}
 				if usedV[k] {
 					c += costOverlap
@@ -228,6 +233,8 @@ func shortestPath(w int, start, end point, blocked, usedH, usedV []bool, noH map
 			} else {
 				if sides[k]&(bitL|bitR) == bitL|bitR {
 					c += costSide
+				} else if sides[k]&(bitU|bitD) != 0 {
+					c += costCrossFrame
 				}
 				if usedH[k] {
 					c += costOverlap
