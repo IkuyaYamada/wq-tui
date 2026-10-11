@@ -58,7 +58,7 @@ func strategyPath(dir string, n board.Node) (string, error) {
 	if n.Done {
 		done = &n.DoneNote
 	}
-	return path, syncStrategyHeader(path, n.Title, n.URL, done)
+	return path, syncStrategyHeader(path, strategyHeader{title: n.Title, url: n.URL, done: done, session: n.Session})
 }
 
 // vimScriptPath writes the embedded layout script where vim can source it.

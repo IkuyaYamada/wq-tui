@@ -71,27 +71,38 @@ func (fm frontmatter) render(body string) string {
 	return "---\n" + strings.Join(fm.lines, "\n") + "\n---\n" + body
 }
 
-// syncStrategyHeader writes title and url into strategy.md's header,
-// creating the file or the header as needed; url: is always present so
-// there is a blank to fill in. done carries the completion comment of a
-// done node and is nil for an open one, which has no done: line. A leading
-// "# <title>" heading from older files is folded into the header.
-func syncStrategyHeader(path, title, url string, done *string) error {
+// strategyHeader is what wq keeps in strategy.md's header.
+type strategyHeader struct {
+	title, url string
+	done       *string // the completion comment of a done node; nil when open
+	session    string  // the agent session working on the node, if any
+}
+
+// syncStrategyHeader writes h into strategy.md's header, creating the file
+// or the header as needed. url: is always present so there is a blank to
+// fill in; done: only on a done node, session: only once there is one. A
+// leading "# <title>" heading from older files is folded into the header.
+func syncStrategyHeader(path string, h strategyHeader) error {
 	cur, err := os.ReadFile(path)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	fm, body, ok := splitFrontmatter(string(cur))
 	if !ok {
-		legacy := strings.TrimPrefix(body, "# "+title+"\n")
+		legacy := strings.TrimPrefix(body, "# "+h.title+"\n")
 		body = "\n" + strings.TrimLeft(legacy, "\n")
 	}
-	fm.set("title", title)
-	fm.set("url", url)
-	if done != nil {
-		fm.set("done", *done)
+	fm.set("title", h.title)
+	fm.set("url", h.url)
+	if h.done != nil {
+		fm.set("done", *h.done)
 	} else {
 		fm.del("done")
+	}
+	if h.session != "" {
+		fm.set("session", h.session)
+	} else {
+		fm.del("session")
 	}
 	out := fm.render(body)
 	if out == string(cur) {
@@ -100,21 +111,24 @@ func syncStrategyHeader(path, title, url string, done *string) error {
 	return os.WriteFile(path, []byte(out), 0o644)
 }
 
-// readStrategyHeader returns the title, url and done comment from
-// strategy.md's header; ok is false when there is no header.
-func readStrategyHeader(path string) (title, url, done string, ok bool) {
+// readStrategyHeader returns what strategy.md's header holds; ok is false
+// when there is no header. done is set whenever a done: line is there.
+func readStrategyHeader(path string) (h strategyHeader, ok bool) {
 	cur, err := os.ReadFile(path)
 	if err != nil {
-		return "", "", "", false
+		return h, false
 	}
 	fm, _, ok := splitFrontmatter(string(cur))
 	if !ok {
-		return "", "", "", false
+		return h, false
 	}
-	title, _ = fm.get("title")
-	url, _ = fm.get("url")
-	done, _ = fm.get("done")
-	return title, url, done, true
+	h.title, _ = fm.get("title")
+	h.url, _ = fm.get("url")
+	if d, found := fm.get("done"); found {
+		h.done = &d
+	}
+	h.session, _ = fm.get("session")
+	return h, true
 }
 
 // appendDoneLog adds a line recording a completion to the bottom of

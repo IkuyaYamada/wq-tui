@@ -413,6 +413,19 @@ func titleRows(title string, w int) []string {
 	return append(rows, runewidth.Truncate(rest, w, "…"))
 }
 
+// nodeMarks are the signs at a card's top right: ↻ it has an agent
+// session (gr resumes it), ↗ a link (gx opens it).
+func nodeMarks(n board.Node) string {
+	var s string
+	if n.Session != "" {
+		s += "↻"
+	}
+	if n.URL != "" {
+		s += "↗"
+	}
+	return s
+}
+
 func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool, st nodeStats) {
 	f := frameNormal
 	if bold {
@@ -426,9 +439,9 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 		cv.set(x+1, y+l.h(n.Row)-1, r, stMeter)
 	}
 	end := x + w - 1 // the task list's progress ends before the corner
-	if n.URL != "" {
-		cv.set(x+w-3, y, '↗', border) // has a link: gx opens it
-		end = x + w - 3
+	if marks := nodeMarks(n); marks != "" {
+		end = x + w - 2 - runewidth.StringWidth(marks)
+		cv.text(end, y, marks, border)
 	} else {
 		end--
 	}
@@ -949,9 +962,7 @@ func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats)
 			}
 		}
 	}
-	if n.URL != "" {
-		right += "↗"
-	}
+	right += nodeMarks(n)
 	rw := runewidth.StringWidth(right)
 	if rw > w/2 {
 		right, rw = "", 0

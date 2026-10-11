@@ -22,15 +22,15 @@ func TestSyncStrategyTitle(t *testing.T) {
 		if c.before != "" {
 			os.WriteFile(path, []byte(c.before), 0o644)
 		}
-		if err := syncStrategyHeader(path, c.title, "", nil); err != nil {
+		if err := syncStrategyHeader(path, strategyHeader{title: c.title}); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := os.ReadFile(path)
 		if string(got) != c.want {
 			t.Errorf("%s:\ngot  %q\nwant %q", c.name, got, c.want)
 		}
-		if title, _, _, ok := readStrategyHeader(path); !ok || title != c.title {
-			t.Errorf("%s: read back %q %v", c.name, title, ok)
+		if h, ok := readStrategyHeader(path); !ok || h.title != c.title {
+			t.Errorf("%s: read back %q %v", c.name, h.title, ok)
 		}
 	}
 }

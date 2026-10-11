@@ -22,6 +22,7 @@ type Node struct {
 	CreatedAt time.Time  `json:"created_at"`
 	DoneAt    *time.Time `json:"done_at,omitempty"`
 	DoneNote  string     `json:"done_note,omitempty"` // comment given when completing
+	Session   string     `json:"session,omitempty"`   // the codex / Claude Code session working on it
 
 	extra map[string]json.RawMessage // fields from a newer wq, kept as-is
 }

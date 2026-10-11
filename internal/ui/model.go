@@ -371,6 +371,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.imePrev = prev
 			}
 		}
+	case sessionDoneMsg:
+		m.sessionDone(msg)
+		m.toASCII()
 	case editorDoneMsg:
 		if msg.err != nil {
 			m.msg = "vim: " + msg.err.Error()
@@ -549,13 +552,18 @@ func openInBrowser(url string) error {
 	return exec.Command("xdg-open", url).Start()
 }
 
-// pullHeader adopts the title, url and (for a done node) done comment
-// edited in strategy.md's header as one undoable change. A blank title is
-// ignored; a blank url or done comment clears it.
+// pullHeader adopts the title, url, session and (for a done node) done
+// comment edited in strategy.md's header as one undoable change. A blank
+// title is ignored; a blank url, session or done comment clears it.
 func (m *Model) pullHeader(id, strategy string) {
-	title, url, done, ok := readStrategyHeader(strategy)
+	h, ok := readStrategyHeader(strategy)
 	if !ok {
 		return
+	}
+	title, url, session := h.title, h.url, h.session
+	done := ""
+	if h.done != nil {
+		done = *h.done
 	}
 	if g := m.b.Group(id); g != nil {
 		if title == "" {
@@ -579,12 +587,12 @@ func (m *Model) pullHeader(id, strategy string) {
 	if !n.Done {
 		done = ""
 	}
-	if n.Title == title && n.URL == url && n.DoneNote == done {
+	if n.Title == title && n.URL == url && n.DoneNote == done && n.Session == session {
 		return
 	}
 	m.checkpoint()
 	n = m.b.Node(id)
-	n.Title, n.URL, n.DoneNote = title, url, done
+	n.Title, n.URL, n.DoneNote, n.Session = title, url, done, session
 	m.save()
 }
 
@@ -635,6 +643,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			m.cursorTo(firstOpen(m.b))
 		case "x":
 			m.openNodeURL()
+		case "r":
+			return m.resumeSession()
 		case "s":
 			return m.decompose()
 		}
@@ -1390,7 +1400,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · f follow edges · L list every title · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · f follow edges · L list every title · gg first open · gx open url · gr resume the node's agent session · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",

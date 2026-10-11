@@ -108,6 +108,7 @@ board. Left out: the maturity meter (`K` shows it).
 | `zc` / `zo` | Draw the cards as blocks / full cards (see [Card density](#card-density)) |
 | `gg` / `G` | The topmost node not yet done (leftmost first; the top-left cell when all are done) / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
+| `gr` | Resume the node's agent session (`session:`), in the directory it ran in: `codex resume <id>` or `claude --resume <id>`. wq steps aside until the agent exits. Nodes with a session show ↻ |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
 | `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
 | `i` | Rename (or edit `title:` in vim) |
@@ -332,6 +333,12 @@ undoable change (a blank title is ignored; a blank url clears the link).
 `gx` on the board then opens the url (`https://` is added to a bare host). `board.json` stays the
 source of truth: the header is rewritten with the current title every time
 the node opens. Other `key: value` lines you add to the header are kept.
+
+A node worked on with codex or Claude Code can keep that session as
+`session: <id>` (paste the id from
+`codex resume …`). wq finds it among `~/.codex/sessions` and
+`~/.claude/projects` (or under `CODEX_HOME` / `CLAUDE_CONFIG_DIR`), which
+also tells it the directory to resume in; a blank `session:` clears it.
 
 A done node also has `done:` under `url:`, holding its completion comment;
 edit it to fix a comment that was cut off or mistyped on the card (a blank
