@@ -792,11 +792,21 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	for i, f := range l.frames {
 		drawFrameLabels(cv, f, frameSt[i], bits)
 	}
+	// A frame's line stays whole where an edge crosses it, unless the edge
+	// belongs to the lit node.
+	onFrame := make([]bool, cv.w*cv.h)
+	for _, f := range l.frames {
+		for p := range f.lines {
+			if p.x >= 0 && p.x < cv.w && p.y >= 0 && p.y < cv.h {
+				onFrame[p.y*cv.w+p.x] = true
+			}
+		}
+	}
 	for k, v := range bits {
 		switch {
 		case litBits[k] != 0:
 			cv.set(k%cv.w, k/cv.w, edgeRuneHeavy(litBits[k]), litSt[k])
-		case v != 0:
+		case v != 0 && !onFrame[k]:
 			cv.set(k%cv.w, k/cv.w, edgeRune(v), base)
 		}
 	}

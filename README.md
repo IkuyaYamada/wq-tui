@@ -189,7 +189,9 @@ lines and cards cut long titles short.
 A frame follows its members as they move; it never adds columns or
 constrains moves and edges. `o` / `O` from a member, and `a` on a member or
 on an empty cell the members wall in all round, add the new node to that
-frame. Edges cross frames and necks but never run along them.
+frame. Edges cross frames and necks but never run along them; where one
+crosses, the frame's line stays whole, unless the edge belongs to the node
+under the cursor.
 
 ## Maturity meter
 

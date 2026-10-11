@@ -274,3 +274,34 @@ func TestEdgesPassOutsideAFrameOnTheEdgeColumn(t *testing.T) {
 		t.Errorf("the edge should run down the outer lane (x=%d), reached x=%d", l.width-1, right)
 	}
 }
+
+func TestFrameLinesWinOverUnlitEdges(t *testing.T) {
+	n := func(id string, row, col int) board.Node { return board.Node{ID: id, Title: id, Row: row, Col: col} }
+	b := &board.Board{
+		Nodes:  []board.Node{n("a", 0, 0), n("m1", 1, 0), n("m2", 1, 1)},
+		Edges:  []board.Edge{{From: "a", To: "m2"}},
+		Groups: []board.Group{{ID: "g", Title: "枠", Members: []string{"m1", "m2"}}},
+	}
+	l := newLayout(b, 100).withFrames(b)
+	routes := routeEdges(b, l)
+	var cross point
+	found := false
+	for _, p := range routes[0].path {
+		if l.frames[0].lines[p] != 0 {
+			cross, found = p, true
+		}
+	}
+	if !found {
+		t.Fatal("the edge should cross the frame's top line")
+	}
+	at := func(v view) rune {
+		cv := renderBoard(b, l, routes, v)
+		return cv.cells[cross.y*cv.w+cross.x].r
+	}
+	if r := at(view{cursorRow: -1}); r != '─' {
+		t.Errorf("unlit: the frame's line should stay whole, got %q", r)
+	}
+	if r := at(view{cursorRow: 0, cursorCol: 0, cursorSt: stBorderSel, lit: "a"}); r != '┃' {
+		t.Errorf("lit: the edge should win, got %q", r)
+	}
+}
