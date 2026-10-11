@@ -267,13 +267,16 @@ func TestEdgesPassOutsideAFrameOnTheEdgeColumn(t *testing.T) {
 		for _, d := range []density{densityFull, densityCompact} {
 			l := makeLayout(b, w, d).withFrames(b)
 			routes := routeEdges(b, l)
-			right := 0
+			right, frameRight := 0, 0
 			for _, p := range routes[0].path {
 				right = max(right, p.x)
 			}
-			if right != l.width-1 {
-				t.Errorf("width %d %s: the edge should run down the outer lane (x=%d), reached x=%d\n%s",
-					w, densityNames[d], l.width-1, right, plain(renderBoard(b, l, routes, view{cursorRow: -1})))
+			for p := range l.frames[0].lines {
+				frameRight = max(frameRight, p.x)
+			}
+			if right <= frameRight {
+				t.Errorf("width %d %s: the edge should run outside the frame (x>%d), reached x=%d\n%s",
+					w, densityNames[d], frameRight, right, plain(renderBoard(b, l, routes, view{cursorRow: -1})))
 			}
 		}
 	}
@@ -307,5 +310,16 @@ func TestFrameLinesWinOverUnlitEdges(t *testing.T) {
 	}
 	if r := at(view{cursorRow: 0, cursorCol: 0, cursorSt: stBorderSel, lit: "a"}); r != '┃' {
 		t.Errorf("lit: the edge should win, got %q", r)
+	}
+}
+
+func TestBoardSitsInTheMiddle(t *testing.T) {
+	for w := 90; w < 130; w++ {
+		l := newLayout(&board.Board{}, w)
+		left := l.colX(0)
+		right := w - (l.colX(board.Cols-1) + l.cardW)
+		if right-left < 0 || right-left > 1 {
+			t.Errorf("width %d: margins %d left, %d right", w, left, right)
+		}
 	}
 }

@@ -66,6 +66,7 @@ type layout struct {
 	compact bool // density is densityCompact
 	cardH   int
 	cardW   int
+	left    int // the left margin: margin, plus half of what the cards leave over
 	rowY    []int
 	breakAt map[int]int  // row → the line its break is drawn on
 	breakY  map[int]bool // lines holding a session break
@@ -80,7 +81,11 @@ func newLayout(b *board.Board, termW int) layout { return makeLayout(b, termW, d
 func makeLayout(b *board.Board, termW int, d density) layout {
 	l := layout{density: d, compact: d == densityCompact, cardH: d.cardH(), cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
 	l.cardW = max(l.cardW, 8)
-	l.width = 2*margin + board.Cols*l.cardW + (board.Cols-1)*gap
+	// What the cards leave over, split evenly, widens both side margins
+	// alike rather than piling up on the right.
+	inner := board.Cols*l.cardW + (board.Cols-1)*gap
+	l.left = margin + max(termW-2*margin-inner, 0)/2
+	l.width = 2*l.left + inner
 	rows := b.MaxRow() + 1 + bufferRows
 	// A member whose neighbour above (below) is not in its frame has the
 	// frame's line over (under) it.
@@ -132,7 +137,7 @@ func (l layout) withFrames(b *board.Board) layout {
 	return l
 }
 
-func (l layout) colX(c int) int { return margin + c*(l.cardW+gap) }
+func (l layout) colX(c int) int { return l.left + c*(l.cardW+gap) }
 
 func index(b *board.Board) map[string]*board.Node {
 	m := make(map[string]*board.Node, len(b.Nodes))
