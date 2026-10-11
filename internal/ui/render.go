@@ -108,15 +108,14 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 			}
 		}
 	}
-	// A full row grows until the longest title in it shows whole.
+	// A row of blocks grows until the longest title in it shows whole; full
+// cards keep their height and cut titles short.
 	extra := make([]int, rows)
 	for _, n := range b.Nodes {
 		if n.Row >= rows {
 			continue
 		}
 		switch d {
-		case densityFull:
-			extra[n.Row] = max(extra[n.Row], cardHeight(n, l.cardW)-titleLines)
 		case densityBlocks:
 			rows, note := blockLines(n, l.cardW)
 			if note != "" {
@@ -462,51 +461,16 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	if label == "" {
 		label = "…"
 	}
-	// The whole title, then the completion comment; the row is as tall
-	// as its longest card needs (see cardLines).
-	rows, note := cardLines(n, w)
-	for i, line := range rows {
+	// A completion comment takes the second line, so the card (and the
+	// grid) keeps its size; the title gives up its second line for it.
+	if n.Done && n.DoneNote != "" {
+		cv.text(x+2, y+1, runewidth.Truncate(label, w-4, "…"), title)
+		cv.text(x+2, y+2, runewidth.Truncate(n.DoneNote, w-4, "…"), stDoneNote)
+		return
+	}
+	for i, line := range titleRows(label, w-4) {
 		cv.text(x+2, y+1+i, line, title)
 	}
-	if note != "" {
-		cv.text(x+2, y+1+len(rows), note, stDoneNote)
-	}
-}
-
-// cardLines is what a full card shows inside its borders: the whole title,
-// wrapped, and a done card's comment for a line of its own.
-func cardLines(n board.Node, cardW int) (rows []string, note string) {
-	label := n.Title
-	if n.Done {
-		label = "✓ " + label
-	}
-	if label == "" {
-		label = "…"
-	}
-	w := max(cardW-4, 2)
-	rest := label
-	for runewidth.StringWidth(rest) > w {
-		head := runewidth.Truncate(rest, w, "")
-		if head == "" {
-			break
-		}
-		rows = append(rows, head)
-		rest = rest[len(head):]
-	}
-	rows = append(rows, rest)
-	if n.Done && n.DoneNote != "" {
-		note = runewidth.Truncate(n.DoneNote, w, "…")
-	}
-	return rows, note
-}
-
-// cardHeight is how many lines inside its borders a full card needs.
-func cardHeight(n board.Node, cardW int) int {
-	rows, note := cardLines(n, cardW)
-	if note != "" {
-		return len(rows) + 1
-	}
-	return len(rows)
 }
 
 // drawFrameLines draws a frame's outline and necks, heavy when the frame

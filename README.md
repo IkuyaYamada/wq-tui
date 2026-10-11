@@ -68,7 +68,7 @@ full cards again (like closing and opening a fold in vim):
 
 | Step | A row takes | Card |
 | --- | --- | --- |
-| full | 5 lines or more | borders, the whole title (two lines at least), the completion comment; a row grows to fit its longest title |
+| full | 5 lines | borders, two title lines (cut short with …; `L` lists them whole), the completion comment |
 | blocks | 2 lines or more | a shaded block without borders, as tall as its whole title (and the completion comment) |
 
 The next wq starts at the step you left it at. It is a setting of the

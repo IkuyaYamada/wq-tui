@@ -99,26 +99,46 @@ func TestSelectedDoneNodeStillLooksDone(t *testing.T) {
 	}
 }
 
-func TestRowsGrowToShowWholeTitles(t *testing.T) {
+func TestDoneNoteOnSecondLine(t *testing.T) {
+	b := &board.Board{Nodes: []board.Node{
+		{ID: "a", Title: "既存テーブルの依存関係を洗う", Row: 0, Col: 0, Done: true, DoneNote: "スキーマ確定"},
+		{ID: "b", Title: "未着手", Row: 1, Col: 0},
+	}}
+	l := newLayout(b, 120)
+	before := l.rowY[1]
+	cv := renderBoard(b, l, nil, view{cursorRow: -1})
+	out := plain(cv)
+	if !strings.Contains(out, "スキーマ確定") {
+		t.Errorf("note missing:\n%s", out)
+	}
+	x, y := l.colX(0)+2, l.rowY[0]+2
+	if c := cv.cells[y*cv.w+x]; c.st != stDoneNote {
+		t.Errorf("note style %v", c.st)
+	}
+	if newLayout(b, 120).rowY[1] != before {
+		t.Error("the note must not change the layout")
+	}
+}
+
+func TestBlockRowsGrowToShowWholeTitles(t *testing.T) {
 	long := "既存テーブルの依存関係を全部洗い出して移行の順番を決める"
 	b := &board.Board{Nodes: []board.Node{
 		{ID: "a", Title: long, Row: 0, Col: 0, Done: true, DoneNote: "スキーマ確定"},
 		{ID: "b", Title: "短い", Row: 1, Col: 0},
-		{ID: "c", Title: "短い", Row: 2, Col: 0},
 	}}
-	l := newLayout(b, 120)
-	cv := renderBoard(b, l, nil, view{cursorRow: -1})
-	out := plain(cv)
-	t.Log("\n" + out)
-	if !strings.Contains(out, "決める") || !strings.Contains(out, "スキーマ確定") {
-		t.Errorf("the whole title and the comment should show")
+	full, blocks := newLayout(b, 120), makeLayout(b, 120, densityBlocks)
+	if full.h(0) != fullCardH {
+		t.Errorf("full rows keep their height: %d", full.h(0))
 	}
-	rows, _ := cardLines(b.Nodes[0], l.cardW)
-	if c := cv.cells[(l.rowY[0]+1+len(rows))*cv.w+l.colX(0)+2]; c.st != stDoneNote {
-		t.Errorf("the comment should follow the title, style %v", c.st)
+	rows, note := blockLines(b.Nodes[0], blocks.cardW)
+	if blocks.h(0) != len(rows)+1 || note == "" || blocks.h(1) != compactCardH {
+		t.Errorf("a row of blocks fits its longest title and comment: %v", blocks.rowH[:2])
 	}
-	if l.h(0) <= fullCardH || l.h(1) != fullCardH || l.h(2) != fullCardH {
-		t.Errorf("only the long title's row should grow: %v", l.rowH[:3])
+	out := plain(renderBoard(b, blocks, nil, view{cursorRow: -1}))
+	for _, want := range append(rows, note) {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q should show:\n%s", want, out)
+		}
 	}
 }
 
