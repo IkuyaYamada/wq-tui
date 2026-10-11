@@ -129,13 +129,17 @@ type Model struct {
 // Option configures a Model.
 type Option func(*Model)
 
-// WithCompact draws one-line cards, so far more rows fit on the screen.
-func WithCompact() Option { return func(m *Model) { m.density = densityCompact } }
+// WithBlocks draws the cards as blocks, so far more rows fit on the screen.
+func WithBlocks() Option { return func(m *Model) { m.density = densityBlocks } }
 
 // WithDensity starts with the cards drawn at the named density ("full" or
-// "compact"); an unknown name, such as the retired "slim", leaves them full.
+// "blocks", which the retired "compact" became); an unknown name, such as
+// the retired "slim", leaves them full.
 func WithDensity(name string) Option {
 	return func(m *Model) {
+		if name == "compact" {
+			m.density = densityBlocks
+		}
 		for d, n := range densityNames {
 			if n == name {
 				m.density = density(d)
@@ -807,7 +811,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 // cursor by the same number of rows, like vim's C-d / C-u.
 func (m *Model) halfPage(dir int) {
 	l := m.layout()
-	rows := max(1, m.bodyHeight()/2/(l.cardH+laneH))
+	rows := max(1, m.bodyHeight()/2/(l.cardH+l.lane))
 	before := m.row
 	m.row = max(0, min(m.row+dir*rows, m.lastRow()))
 	m.scroll += l.rowY[min(m.row, len(l.rowY)-1)] - l.rowY[min(before, len(l.rowY)-1)]
@@ -818,7 +822,7 @@ func (m *Model) halfPage(dir int) {
 // visible row, as in vim.
 func (m *Model) scrollRows(n int) {
 	l := m.layout()
-	rowH := l.cardH + laneH
+	rowH := l.cardH + l.lane
 	h := m.bodyHeight()
 	m.scroll = max(0, min(m.scroll+n*rowH, max(l.height-h, 0)))
 	for m.row < len(l.rowY)-1 && l.rowY[m.row] < m.scroll {
@@ -832,7 +836,7 @@ func (m *Model) scrollRows(n int) {
 // setDensity steps the cards' height by step (1 denser, -1 fuller),
 // keeping the cursor's row where it was on the screen.
 func (m *Model) setDensity(step int) {
-	d := min(max(m.density+density(step), densityFull), densityCompact)
+	d := min(max(m.density+density(step), densityFull), densityBlocks)
 	if d == m.density {
 		m.msg = "cards are already " + densityNames[d]
 		return

@@ -48,14 +48,14 @@ const (
 type density int
 
 const (
-	densityFull    density = iota // bordered, room for two title lines
-	densityCompact                // a one-line band: see drawCompactCard
+	densityFull   density = iota // bordered, room for two title lines
+	densityBlocks                // shaded blocks as tall as their titles, no borders
 )
 
-var densityNames = [...]string{"full", "compact"}
+var densityNames = [...]string{"full", "blocks"}
 
 func (d density) cardH() int {
-	if d == densityCompact {
+	if d != densityFull {
 		return compactCardH
 	}
 	return fullCardH
@@ -63,8 +63,9 @@ func (d density) cardH() int {
 
 type layout struct {
 	density density
-	compact bool // density is densityCompact
+	compact bool  // cards are shaded blocks, not boxes
 	cardH   int   // the shortest a card is; rows holding longer titles grow
+	lane    int   // lines between rows for edges: laneH, one more for blocks
 	rowH    []int // each row's card height
 	cardW   int
 	left    int // the left margin: margin, plus half of what the cards leave over
@@ -80,7 +81,7 @@ type layout struct {
 func newLayout(b *board.Board, termW int) layout { return makeLayout(b, termW, densityFull) }
 
 func makeLayout(b *board.Board, termW int, d density) layout {
-	l := layout{density: d, compact: d == densityCompact, cardH: d.cardH(), cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
+	l := layout{density: d, compact: d != densityFull, lane: laneH, cardH: d.cardH(), cardW: (termW - 2*margin - (board.Cols-1)*gap) / board.Cols}
 	l.cardW = max(l.cardW, 8)
 	// What the cards leave over, split evenly, widens both side margins
 	// alike rather than piling up on the right.
@@ -109,11 +110,19 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 	}
 	// A full row grows until the longest title in it shows whole.
 	extra := make([]int, rows)
-	if !l.compact {
-		for _, n := range b.Nodes {
-			if n.Row < rows {
-				extra[n.Row] = max(extra[n.Row], cardHeight(n, l.cardW)-titleLines)
+	for _, n := range b.Nodes {
+		if n.Row >= rows {
+			continue
+		}
+		switch d {
+		case densityFull:
+			extra[n.Row] = max(extra[n.Row], cardHeight(n, l.cardW)-titleLines)
+		case densityBlocks:
+			rows, note := blockLines(n, l.cardW)
+			if note != "" {
+				rows = append(rows, note)
 			}
+			extra[n.Row] = max(extra[n.Row], len(rows)-1)
 		}
 	}
 	l.breakAt, l.breakY, l.noH = map[int]int{}, map[int]bool{}, map[int]bool{}
@@ -130,7 +139,7 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 			l.noH[y] = true
 			y++
 		}
-		y += laneH
+		y += l.lane
 		if _, ok := b.BreakAfter(r); ok {
 			l.breakAt[r] = y
 			l.breakY[y], l.noH[y] = true, true
@@ -201,6 +210,7 @@ const (
 	stCardDoneBand
 	stCardChecks
 	stCardChecksDone
+	stCardNote
 	stFrame // the first of the frame styles: see frameStyle
 )
 
@@ -228,16 +238,26 @@ var styles = map[style]lipgloss.Style{
 	stEdgeOut:       lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true),
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 
-	stCard:           lipgloss.NewStyle().Background(lipgloss.Color("236")),
+	stCard:           lipgloss.NewStyle().Background(bandBg),
 	stCardSel:        lipgloss.NewStyle().Background(lipgloss.Color("25")).Foreground(lipgloss.Color("231")).Bold(true),
 	stCardTarget:     lipgloss.NewStyle().Background(lipgloss.Color("136")).Foreground(lipgloss.Color("16")).Bold(true),
 	stCardMove:       lipgloss.NewStyle().Background(lipgloss.Color("30")).Foreground(lipgloss.Color("231")).Bold(true),
-	stCardDone:       lipgloss.NewStyle().Background(lipgloss.Color("234")).Foreground(lipgloss.Color("242")).Strikethrough(true),
+	stCardDone:       lipgloss.NewStyle().Background(bandDoneBg).Foreground(bandDoneFg).Strikethrough(true),
 	stCardDoneSel:    lipgloss.NewStyle().Background(lipgloss.Color("25")).Foreground(lipgloss.Color("250")).Strikethrough(true),
-	stCardDoneBand:   lipgloss.NewStyle().Background(lipgloss.Color("234")),
-	stCardChecks:     lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("108")),
-	stCardChecksDone: lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("242")),
+	stCardDoneBand:   lipgloss.NewStyle().Background(bandDoneBg),
+	stCardChecks:     lipgloss.NewStyle().Background(bandBg).Foreground(bandGreen),
+	stCardChecksDone: lipgloss.NewStyle().Background(bandBg).Foreground(bandDoneFg),
+	stCardNote:       lipgloss.NewStyle().Background(bandDoneBg).Foreground(bandGreen).Italic(true),
 }
+
+// Bands (compact cards and blocks) are shaded; the shades follow the
+// terminal's background so they stand out on a light one as on a dark one.
+var (
+	bandBg     = lipgloss.AdaptiveColor{Light: "254", Dark: "238"}
+	bandDoneBg = lipgloss.AdaptiveColor{Light: "255", Dark: "235"}
+	bandDoneFg = lipgloss.AdaptiveColor{Light: "246", Dark: "243"}
+	bandGreen  = lipgloss.AdaptiveColor{Light: "28", Dark: "108"}
+)
 
 // framePalette holds the colors frames take turns in: dim, and lit while
 // the cursor is on the frame or one of its members.
@@ -842,7 +862,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 			}
 			cv.set(rt.srcPort.x, rt.srcPort.y, port, st)
 		}
-		if l.density == densityFull {
+		if !l.compact {
 			cv.set(rt.dstPort.x, rt.dstPort.y, '▼', st)
 		} else if len(rt.path) > 0 {
 			arrows = append(arrows, arrow{rt.path[len(rt.path)-1], st})
@@ -906,7 +926,7 @@ func compactStyle(border style, done bool) style {
 // has a link. Meters and the completion comment are left out; K shows
 // them.
 func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats) {
-	x, y, w := l.colX(n.Col), l.rowY[n.Row], l.cardW
+	x, y, w, h := l.colX(n.Col), l.rowY[n.Row], l.cardW, l.h(n.Row)
 	fill := st // the strikethrough of a done title, not of the whole band
 	switch st {
 	case stCardDone:
@@ -914,8 +934,10 @@ func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats)
 	case stCardDoneSel:
 		fill = stCardSel
 	}
-	for i := 0; i < w; i++ {
-		cv.set(x+i, y, ' ', fill)
+	for yy := y; yy < y+h; yy++ {
+		for i := 0; i < w; i++ {
+			cv.set(x+i, yy, ' ', fill)
+		}
 	}
 	right, rst := "", fill
 	if p := ns.progress(); p != "" {
@@ -934,6 +956,27 @@ func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats)
 	if rw > w/2 {
 		right, rw = "", 0
 	}
+	// A block: the whole title over as many lines as the row gives it,
+	// the completion comment after it, the progress and ↗ at the right
+	// end of the first line that has room for them.
+	rows, note := blockLines(n, w)
+	for i, line := range rows {
+		cv.text(x+1, y+i, line, st)
+	}
+	if note != "" {
+		cv.text(x+1, y+len(rows), note, stCardNote)
+	}
+	if rw > 0 {
+		for i, line := range rows {
+			if runewidth.StringWidth(line)+1+rw <= w-2 {
+				cv.text(x+w-1-rw, y+i, right, rst)
+				break
+			}
+		}
+	}
+}
+
+func blockLabel(n board.Node) string {
 	label := n.Title
 	if n.Done {
 		label = "✓ " + label
@@ -941,14 +984,27 @@ func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats)
 	if label == "" {
 		label = "…"
 	}
-	room := w - 2
-	if rw > 0 {
-		room -= rw + 1
+	return label
+}
+
+// blockLines is what a block shows: the whole title wrapped inside a
+// column of padding on either side, and a done block's comment.
+func blockLines(n board.Node, cardW int) (rows []string, note string) {
+	w := max(cardW-2, 2)
+	rest := blockLabel(n)
+	for runewidth.StringWidth(rest) > w {
+		head := runewidth.Truncate(rest, w, "")
+		if head == "" {
+			break
+		}
+		rows = append(rows, head)
+		rest = rest[len(head):]
 	}
-	cv.text(x+1, y, runewidth.Truncate(label, max(room, 1), "…"), st)
-	if rw > 0 {
-		cv.text(x+w-1-rw, y, right, rst)
+	rows = append(rows, rest)
+	if n.Done && n.DoneNote != "" {
+		note = runewidth.Truncate(n.DoneNote, w, "…")
 	}
+	return rows, note
 }
 
 // drawCompactEmpty marks an empty cell as a dashed line: the cursor, or

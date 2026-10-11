@@ -221,16 +221,16 @@ func TestFrameHugsMembersAndJoinsPieces(t *testing.T) {
 	}
 }
 
-func TestCompactCardsAreOneLine(t *testing.T) {
+func TestBlocksOfShortTitlesAreOneLine(t *testing.T) {
 	b := sample()
 	b.Nodes[1].Done = true
 	b.Nodes[2].URL = "https://example.com"
-	full, compact := newLayout(b, 120), makeLayout(b, 120, densityCompact)
-	if compact.height*2 > full.height {
-		t.Errorf("compact %d lines, full %d: should be well under half", compact.height, full.height)
+	full, compact := newLayout(b, 120), makeLayout(b, 120, densityBlocks)
+	if compact.height >= full.height*3/4 {
+		t.Errorf("blocks %d lines, full %d: should be well under", compact.height, full.height)
 	}
-	if compact.rowY[1]-compact.rowY[0] != compactCardH+laneH {
-		t.Errorf("a compact row should take %d lines: %v", compactCardH+laneH, compact.rowY)
+	if compact.rowY[1]-compact.rowY[0] != compactCardH+compact.lane {
+		t.Errorf("a row of short titles should take %d lines: %v", compactCardH+compact.lane, compact.rowY)
 	}
 	routes := routeEdges(b, compact)
 	cv := renderBoard(b, compact, routes, view{cursorRow: 1, cursorCol: 0, cursorSt: stBorderSel, lit: "d"})
@@ -248,7 +248,7 @@ func TestCompactCardsAreOneLine(t *testing.T) {
 		t.Errorf("titles, done mark and link should share the card's line: %q", row0)
 	}
 	if strings.ContainsAny(out, "╭╰┬") {
-		t.Error("compact cards have no borders or ports")
+		t.Error("blocks have no borders or ports")
 	}
 	if c := cv.cells[compact.rowY[1]*cv.w+compact.colX(0)]; c.st != stCardSel {
 		t.Errorf("cursor card style %v", c.st)
@@ -266,7 +266,7 @@ func TestEdgesPassOutsideAFrameOnTheEdgeColumn(t *testing.T) {
 		Groups: []board.Group{{ID: "g", Title: "枠", Members: []string{"b", "c", "x", "y"}}},
 	}
 	for _, w := range []int{80, 100, 121, 160, 203} {
-		for _, d := range []density{densityFull, densityCompact} {
+		for _, d := range []density{densityFull, densityBlocks} {
 			l := makeLayout(b, w, d).withFrames(b)
 			routes := routeEdges(b, l)
 			right, frameRight := 0, 0

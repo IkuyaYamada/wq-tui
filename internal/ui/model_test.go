@@ -1238,17 +1238,17 @@ func TestYPCopiesStrategyPath(t *testing.T) {
 	}
 }
 
-func TestCompactModelScrollsByCompactRows(t *testing.T) {
+func TestBlocksScrollByRows(t *testing.T) {
 	b := &board.Board{}
 	for r := range 40 {
 		b.Nodes = append(b.Nodes, board.Node{ID: fmt.Sprint(r), Title: fmt.Sprint(r), Row: r})
 	}
-	m := New(t.TempDir(), b, WithCompact())
+	m := New(t.TempDir(), b, WithBlocks())
 	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 22})
 	m = n.(Model)
 	m = press(t, m, "gg", "ctrl+d")
-	if rows := m.bodyHeight() / 2 / (compactCardH + laneH); m.row != rows {
-		t.Errorf("C-d should move half a screen of compact rows (%d), got row %d", rows, m.row)
+	if rows := m.bodyHeight() / 2 / (compactCardH + m.layout().lane); m.row != rows {
+		t.Errorf("C-d should move half a screen of rows (%d), got row %d", rows, m.row)
 	}
 	m = press(t, m, "G")
 	if !strings.Contains(m.View(), "39") {
@@ -1259,12 +1259,12 @@ func TestCompactModelScrollsByCompactRows(t *testing.T) {
 func TestZcZoStepCardDensity(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{})
 	m = press(t, m, "z", "c")
-	if m.density != densityCompact {
+	if m.density != densityBlocks {
 		t.Fatalf("zc: %v", m.density)
 	}
 	m = press(t, m, "z", "c")
-	if m.density != densityCompact || !strings.Contains(m.msg, "already") {
-		t.Errorf("zc stops at compact: %v %q", m.density, m.msg)
+	if m.density != densityBlocks || !strings.Contains(m.msg, "already") {
+		t.Errorf("zc stops at blocks: %v %q", m.density, m.msg)
 	}
 	m = press(t, m, "z", "o", "z", "o")
 	if m.density != densityFull {
@@ -1274,13 +1274,13 @@ func TestZcZoStepCardDensity(t *testing.T) {
 	// The density is handed over to be kept, and a saved one is picked up.
 	var saved []string
 	m = New(t.TempDir(), &board.Board{}, WithDensity("compact"), WithDensitySaver(func(s string) { saved = append(saved, s) }))
-	if m.density != densityCompact {
-		t.Errorf("WithDensity: %v", m.density)
+	if m.density != densityBlocks {
+		t.Errorf("a saved compact should start as blocks: %v", m.density)
 	}
 	m = press(t, m, "z", "o")
 	saved = nil
 	m = press(t, m, "z", "c", "z", "c")
-	if strings.Join(saved, ",") != "compact" {
+	if strings.Join(saved, ",") != "blocks" {
 		t.Errorf("saved %v: once, and not when nothing changed", saved)
 	}
 }

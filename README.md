@@ -63,34 +63,36 @@ Plain files, so the directory can be a git repo of its own; see
 
 ## Card density
 
-When the board grows tall, `zc` draws the cards denser and `zo` fuller
-again (like closing and opening a fold in vim), between two steps:
+When the board grows tall, `zc` draws the cards as blocks and `zo` as
+full cards again (like closing and opening a fold in vim):
 
 | Step | A row takes | Card |
 | --- | --- | --- |
 | full | 5 lines or more | borders, the whole title (two lines at least), the completion comment; a row grows to fit its longest title |
-| compact | 2 lines | a one-line band |
+| blocks | 2 lines or more | a shaded block without borders, as tall as its whole title (and the completion comment) |
 
 The next wq starts at the step you left it at. It is a setting of the
 machine, not of the board, so it lives outside the data directory, in
 `~/Library/Application Support/wq/density` on macOS (`~/.config/wq/density`
-on Linux). `WQ_COMPACT=1 wq` starts in compact whatever was left.
+on Linux); a "compact" saved by an older wq starts as blocks.
+`WQ_COMPACT=1 wq` starts in blocks whatever was left.
 
 ```
- スキーマ      2/5   API
-   └──────────────────▼
- 移行               テスト
-   ▼
+ スキーマ設計と      2/5   API
+ 移行の順番                 
+   │                  ▼
+   └─────────────┐   テスト
+                 ▼
  リリース
 ```
 
-A compact card is a shaded band holding its title; the cursor, a selection and a
-connect target colour the whole band. A done card reads `✓` and is struck
-through; the task list's progress and `↗` sit at the band's right end.
-Edges start right under a card and end in `▼` just above the target.
-Frames, necks and session breaks are drawn as on the full board. Left out:
-the second title line, the maturity meter and the completion comment
-(`K` shows them all).
+A block is shaded, in a shade that follows a light or dark terminal; the
+cursor, a selection and a connect target colour the whole block. A done
+block reads `✓` and is struck through, its completion comment on the line
+after the title; the task list's progress and `↗` sit at the right end of
+the first line with room for them. Edges start right under a block and end
+in `▼` just above the target. Frames, necks and session breaks are drawn as on the full
+board. Left out: the maturity meter (`K` shows it).
 
 ## Keys
 
@@ -103,7 +105,7 @@ the second title line, the maturity meter and the completion comment
 | `Ctrl+d` / `Ctrl+u` | Scroll half a screen down / up, moving the cursor with it |
 | `Ctrl+e` / `Ctrl+y` | Scroll one row down / up; the cursor stays unless it would leave the screen |
 | `zz` / `zt` / `zb` | Put the cursor's row at the middle / top / bottom of the screen (`zt` keeps the lane above it, with its session break, in view) |
-| `zc` / `zo` | Draw the cards denser / fuller: full, compact (see [Card density](#card-density)) |
+| `zc` / `zo` | Draw the cards as blocks / full cards (see [Card density](#card-density)) |
 | `gg` / `G` | The topmost node not yet done (leftmost first; the top-left cell when all are done) / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
 | `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
 	"github.com/IkuyaYamada/wq-tui/internal/ime"
@@ -46,7 +47,7 @@ func main() {
 		}))
 	}
 	if os.Getenv("WQ_COMPACT") == "1" {
-		opts = append(opts, ui.WithCompact())
+		opts = append(opts, ui.WithBlocks())
 	}
 	if os.Getenv("WQ_IME") != "off" {
 		opts = append(opts, ui.WithIME(ime.System{}))
@@ -54,6 +55,9 @@ func main() {
 	caret := &ui.Caret{}
 	opts = append(opts, ui.WithCaret(caret))
 	out := ui.CaretOutput{File: os.Stdout, C: caret}
+	// Ask the terminal whether its background is dark now, before the
+	// program reads keys: the answer would otherwise arrive as input.
+	lipgloss.SetHasDarkBackground(lipgloss.HasDarkBackground())
 	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen(), tea.WithOutput(out), tea.WithReportFocus()).Run(); err != nil {
 		fail(err)
 	}
