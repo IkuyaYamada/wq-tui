@@ -41,7 +41,7 @@ func routeEdges(b *board.Board, l layout) []route {
 	blocked := make([]bool, w*h)
 	for _, n := range b.Nodes {
 		x0, y0 := l.colX(n.Col), l.rowY[n.Row]
-		for y := y0; y < y0+l.cardH; y++ {
+		for y := y0; y < y0+l.h(n.Row); y++ {
 			for x := x0; x < x0+l.cardW; x++ {
 				blocked[y*w+x] = true
 			}
@@ -138,7 +138,7 @@ func assignPorts(b *board.Board, l layout, idx map[string]*board.Node) (src, dst
 		}
 		byCol(es, func(e board.Edge) string { return e.To })
 		for k, e := range es {
-			src[e] = point{portX(n, k, len(es)), l.rowY[n.Row] + l.cardH - 1}
+			src[e] = point{portX(n, k, len(es)), l.rowY[n.Row] + l.h(n.Row) - 1}
 		}
 	}
 	for id, es := range in {
@@ -271,7 +271,8 @@ func routeKey(b *board.Board, width int) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "%d|", width)
 	for _, n := range b.Nodes {
-		fmt.Fprintf(&sb, "%s:%d:%d,", n.ID, n.Row, n.Col)
+		// The title and comment too: they set how tall the row is.
+		fmt.Fprintf(&sb, "%s:%d:%d:%v:%q:%q,", n.ID, n.Row, n.Col, n.Done, n.Title, n.DoneNote)
 	}
 	sb.WriteByte('|')
 	for _, e := range b.Edges {

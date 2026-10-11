@@ -806,11 +806,11 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 // halfPage scrolls half a screen down (dir 1) or up (-1), moving the
 // cursor by the same number of rows, like vim's C-d / C-u.
 func (m *Model) halfPage(dir int) {
-	rowH := m.layout().cardH + laneH
-	rows := max(1, m.bodyHeight()/2/rowH)
+	l := m.layout()
+	rows := max(1, m.bodyHeight()/2/(l.cardH+laneH))
 	before := m.row
 	m.row = max(0, min(m.row+dir*rows, m.lastRow()))
-	m.scroll += (m.row - before) * rowH
+	m.scroll += l.rowY[min(m.row, len(l.rowY)-1)] - l.rowY[min(before, len(l.rowY)-1)]
 }
 
 // scrollRows scrolls the view by n rows (C-e / C-y) without moving the
@@ -824,7 +824,7 @@ func (m *Model) scrollRows(n int) {
 	for m.row < len(l.rowY)-1 && l.rowY[m.row] < m.scroll {
 		m.row++
 	}
-	for m.row > 0 && l.rowY[m.row]+l.cardH+1 > m.scroll+h {
+	for m.row > 0 && l.rowY[m.row]+l.h(m.row)+1 > m.scroll+h {
 		m.row--
 	}
 }
@@ -854,7 +854,7 @@ func (m *Model) align(key string) {
 	h := m.bodyHeight()
 	switch key {
 	case "z":
-		m.scroll = top + l.cardH/2 - h/2
+		m.scroll = top + l.h(m.row)/2 - h/2
 	case "t":
 		// Leave what lies between it and the row above on screen: the
 		// lane, and the session break or frame line there.
@@ -863,7 +863,7 @@ func (m *Model) align(key string) {
 			m.scroll = l.rowY[r-1] + l.cardH
 		}
 	case "b":
-		m.scroll = top + l.cardH + 1 - h
+		m.scroll = top + l.h(m.row) + 1 - h
 	}
 }
 
@@ -1367,7 +1367,7 @@ func (m *Model) bodyHeight() int { return max(m.height-2, 1) }
 func (m *Model) ensureVisible() {
 	l := m.layout()
 	top := l.rowY[min(m.row, len(l.rowY)-1)]
-	bottom := top + l.cardH + 1
+	bottom := top + l.h(m.row) + 1
 	h := m.bodyHeight()
 	if top < m.scroll {
 		m.scroll = top

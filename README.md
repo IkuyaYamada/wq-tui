@@ -68,7 +68,7 @@ again (like closing and opening a fold in vim), between two steps:
 
 | Step | A row takes | Card |
 | --- | --- | --- |
-| full | 5 lines | borders, two title lines, the completion comment |
+| full | 5 lines or more | borders, the whole title (two lines at least), the completion comment; a row grows to fit its longest title |
 | compact | 2 lines | a one-line band |
 
 The next wq starts at the step you left it at. It is a setting of the

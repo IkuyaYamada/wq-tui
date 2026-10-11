@@ -64,7 +64,8 @@ func (d density) cardH() int {
 type layout struct {
 	density density
 	compact bool // density is densityCompact
-	cardH   int
+	cardH   int   // the shortest a card is; rows holding longer titles grow
+	rowH    []int // each row's card height
 	cardW   int
 	left    int // the left margin: margin, plus half of what the cards leave over
 	rowY    []int
@@ -106,6 +107,15 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 			}
 		}
 	}
+	// A full row grows until the longest title in it shows whole.
+	extra := make([]int, rows)
+	if !l.compact {
+		for _, n := range b.Nodes {
+			if n.Row < rows {
+				extra[n.Row] = max(extra[n.Row], cardHeight(n, l.cardW)-titleLines)
+			}
+		}
+	}
 	l.breakAt, l.breakY, l.noH = map[int]int{}, map[int]bool{}, map[int]bool{}
 	y := 0
 	for r := 0; r < rows; r++ {
@@ -114,7 +124,8 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 			y++
 		}
 		l.rowY = append(l.rowY, y)
-		y += l.cardH
+		l.rowH = append(l.rowH, l.cardH+extra[r])
+		y += l.rowH[r]
 		if bottom[r] {
 			l.noH[y] = true
 			y++
@@ -135,6 +146,14 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 func (l layout) withFrames(b *board.Board) layout {
 	l.frames = layoutFrames(b, l)
 	return l
+}
+
+// h is the height of the cards in row r.
+func (l layout) h(r int) int {
+	if r >= 0 && r < len(l.rowH) {
+		return l.rowH[r]
+	}
+	return l.cardH
 }
 
 func (l layout) colX(c int) int { return l.left + c*(l.cardW+gap) }
@@ -343,7 +362,7 @@ var (
 
 func drawFrame(cv *canvas, l layout, row, col int, f [6]rune, border style) {
 	x, y := l.colX(col), l.rowY[row]
-	w, bottom := l.cardW, y+l.cardH-1
+	w, bottom := l.cardW, y+l.h(row)-1
 	cv.set(x, y, f[0], border)
 	cv.set(x+w-1, y, f[2], border)
 	cv.set(x, bottom, f[4], border)
@@ -384,7 +403,7 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	// How much of the strategy is written, as a bar on the bottom
 	// border's left end (edge ports sit further in).
 	if r := st.meter(); r != 0 {
-		cv.set(x+1, y+l.cardH-1, r, stMeter)
+		cv.set(x+1, y+l.h(n.Row)-1, r, stMeter)
 	}
 	end := x + w - 1 // the task list's progress ends before the corner
 	if n.URL != "" {
@@ -410,16 +429,51 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	if label == "" {
 		label = "…"
 	}
-	// A completion comment takes the second line, so the card (and the
-	// grid) keeps its size; the title gives up its second line for it.
-	if n.Done && n.DoneNote != "" {
-		cv.text(x+2, y+1, runewidth.Truncate(label, w-4, "…"), title)
-		cv.text(x+2, y+2, runewidth.Truncate(n.DoneNote, w-4, "…"), stDoneNote)
-		return
-	}
-	for i, line := range titleRows(label, w-4) {
+	// The whole title, then the completion comment; the row is as tall
+	// as its longest card needs (see cardLines).
+	rows, note := cardLines(n, w)
+	for i, line := range rows {
 		cv.text(x+2, y+1+i, line, title)
 	}
+	if note != "" {
+		cv.text(x+2, y+1+len(rows), note, stDoneNote)
+	}
+}
+
+// cardLines is what a full card shows inside its borders: the whole title,
+// wrapped, and a done card's comment for a line of its own.
+func cardLines(n board.Node, cardW int) (rows []string, note string) {
+	label := n.Title
+	if n.Done {
+		label = "✓ " + label
+	}
+	if label == "" {
+		label = "…"
+	}
+	w := max(cardW-4, 2)
+	rest := label
+	for runewidth.StringWidth(rest) > w {
+		head := runewidth.Truncate(rest, w, "")
+		if head == "" {
+			break
+		}
+		rows = append(rows, head)
+		rest = rest[len(head):]
+	}
+	rows = append(rows, rest)
+	if n.Done && n.DoneNote != "" {
+		note = runewidth.Truncate(n.DoneNote, w, "…")
+	}
+	return rows, note
+}
+
+// cardHeight is how many lines inside its borders a full card needs.
+func cardHeight(n board.Node, cardW int) int {
+	rows, note := cardLines(n, cardW)
+	if note != "" {
+		return len(rows) + 1
+	}
+	return len(rows)
 }
 
 // drawFrameLines draws a frame's outline and necks, heavy when the frame
@@ -655,7 +709,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	// A faint dot marks every cell so empty rows still read as a grid.
 	for r := range l.rowY {
 		for c := 0; c < board.Cols; c++ {
-			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+(l.cardH-1)/2, '·', stDot)
+			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+(l.h(r)-1)/2, '·', stDot)
 		}
 	}
 	cur := b.At(v.cursorRow, v.cursorCol)
@@ -710,7 +764,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 			drawFrame(cv, l, g.row, g.col, frameDashed, border)
 			x, y := l.colX(g.col), l.rowY[g.row]
 			for i, line := range titleRows(g.title, l.cardW-4) {
-				if 1+i < l.cardH-1 {
+				if 1+i < l.h(g.row)-1 {
 					cv.text(x+2, y+1+i, line, stPreviewDim)
 				}
 			}
