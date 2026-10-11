@@ -47,14 +47,18 @@ func exitStep(err error) (int, error) {
 }
 
 // strategyPath makes sure the node's directory exists and that strategy.md
-// carries the node's current title and url in its header.
+// carries the node's current title, url and done comment in its header.
 func strategyPath(dir string, n board.Node) (string, error) {
 	d := board.NodeDir(dir, n.ID)
 	if err := os.MkdirAll(d, 0o755); err != nil {
 		return "", err
 	}
 	path := filepath.Join(d, "strategy.md")
-	return path, syncStrategyHeader(path, n.Title, n.URL)
+	var done *string
+	if n.Done {
+		done = &n.DoneNote
+	}
+	return path, syncStrategyHeader(path, n.Title, n.URL, done)
 }
 
 // vimScriptPath writes the embedded layout script where vim can source it.

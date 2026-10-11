@@ -331,6 +331,13 @@ undoable change (a blank title is ignored; a blank url clears the link).
 source of truth: the header is rewritten with the current title every time
 the node opens. Other `key: value` lines you add to the header are kept.
 
+A done node also has `done:` under `url:`, holding its completion comment;
+edit it to fix a comment that was cut off or mistyped on the card (a blank
+one clears it). Each completion is also logged at the bottom of the file
+(`✓ done 2026-10-11 01:49 — comment`), so a comment survives the node being
+reopened and done again. A node without a strategy.md gets no file on
+completion; `done:` appears when it is first opened.
+
 ## Input method (macOS)
 
 Board keys need ASCII, so wq switches the keyboard to the ASCII input source

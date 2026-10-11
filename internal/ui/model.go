@@ -536,10 +536,11 @@ func openInBrowser(url string) error {
 	return exec.Command("xdg-open", url).Start()
 }
 
-// pullHeader adopts the title and url edited in strategy.md's header as
-// one undoable change. A blank title is ignored; a blank url clears it.
+// pullHeader adopts the title, url and (for a done node) done comment
+// edited in strategy.md's header as one undoable change. A blank title is
+// ignored; a blank url or done comment clears it.
 func (m *Model) pullHeader(id, strategy string) {
-	title, url, ok := readStrategyHeader(strategy)
+	title, url, done, ok := readStrategyHeader(strategy)
 	if !ok {
 		return
 	}
@@ -562,12 +563,15 @@ func (m *Model) pullHeader(id, strategy string) {
 	if title == "" {
 		title = n.Title
 	}
-	if n.Title == title && n.URL == url {
+	if !n.Done {
+		done = ""
+	}
+	if n.Title == title && n.URL == url && n.DoneNote == done {
 		return
 	}
 	m.checkpoint()
 	n = m.b.Node(id)
-	n.Title, n.URL = title, url
+	n.Title, n.URL, n.DoneNote = title, url, done
 	m.save()
 }
 
@@ -1319,6 +1323,25 @@ func (m *Model) toggleDone(comment string) {
 		n.DoneAt, n.DoneNote = &now, comment
 	}
 	m.save()
+	m.recordDone(*n)
+}
+
+// recordDone mirrors the node's done state into an existing strategy.md's
+// header and, on completion, logs it at the bottom of the file, so the
+// comment can be read back and fixed in vim. A node without one gets no
+// file; its header picks up done: when it is first opened.
+func (m *Model) recordDone(n board.Node) {
+	if _, err := os.Stat(filepath.Join(board.NodeDir(m.dir, n.ID), "strategy.md")); err != nil {
+		return
+	}
+	path, err := strategyPath(m.dir, n)
+	if err == nil && n.Done && n.DoneAt != nil {
+		err = appendDoneLog(path, *n.DoneAt, n.DoneNote)
+	}
+	if err != nil {
+		m.msg = "strategy.md: " + err.Error()
+	}
+	m.stats[n.ID] = readStats(m.dir, n.ID)
 }
 
 func (m *Model) bodyHeight() int { return max(m.height-2, 1) }

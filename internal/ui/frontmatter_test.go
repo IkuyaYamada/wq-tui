@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/IkuyaYamada/wq-tui/internal/board"
@@ -21,14 +22,14 @@ func TestSyncStrategyTitle(t *testing.T) {
 		if c.before != "" {
 			os.WriteFile(path, []byte(c.before), 0o644)
 		}
-		if err := syncStrategyHeader(path, c.title, ""); err != nil {
+		if err := syncStrategyHeader(path, c.title, "", nil); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := os.ReadFile(path)
 		if string(got) != c.want {
 			t.Errorf("%s:\ngot  %q\nwant %q", c.name, got, c.want)
 		}
-		if title, _, ok := readStrategyHeader(path); !ok || title != c.title {
+		if title, _, _, ok := readStrategyHeader(path); !ok || title != c.title {
 			t.Errorf("%s: read back %q %v", c.name, title, ok)
 		}
 	}
@@ -67,5 +68,43 @@ func TestTitleEditedInVimRenamesNode(t *testing.T) {
 	m = next.(Model)
 	if got := m.selected().Title; got != "仮タイトル" {
 		t.Errorf("blank title applied: %q", got)
+	}
+}
+
+func TestDoneCommentLivesInStrategy(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	m = press(t, m, "a", "設計", "<enter>")
+	strategy, err := strategyPath(dir, *m.selected())
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(strategy, []byte("---\ntitle: 設計\nurl:\n---\n\n方針\n"), 0o644)
+
+	m = press(t, m, "<space>", "初回", "<enter>")
+	doc, _ := os.ReadFile(strategy)
+	if !strings.Contains(string(doc), "url:\ndone: 初回\n---") || !strings.HasSuffix(string(doc), " — 初回\n") {
+		t.Fatalf("after done:\n%s", doc)
+	}
+
+	// The comment is fixed in vim's header.
+	fixed := strings.Replace(string(doc), "done: 初回", "done: 直した", 1)
+	os.WriteFile(strategy, []byte(fixed), 0o644)
+	next, _ := m.Update(editorDoneMsg{id: m.selected().ID, strategy: strategy})
+	m = next.(Model)
+	if got := m.selected().DoneNote; got != "直した" {
+		t.Fatalf("note %q", got)
+	}
+
+	// Reopening drops the header line; the log keeps every completion.
+	m = press(t, m, "<space>")
+	doc, _ = os.ReadFile(strategy)
+	if strings.Contains(string(doc), "done: ") {
+		t.Errorf("reopened header still has done:\n%s", doc)
+	}
+	m = press(t, m, "<space>", "二回目", "<enter>")
+	doc, _ = os.ReadFile(strategy)
+	if strings.Count(string(doc), "✓ done ") != 2 || !strings.Contains(string(doc), "done: 二回目\n") {
+		t.Errorf("after second done:\n%s", doc)
 	}
 }

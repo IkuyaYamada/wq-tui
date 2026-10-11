@@ -107,6 +107,7 @@ func (m *Model) doneAll(ids []string) {
 	}
 	m.checkpoint()
 	now := time.Now()
+	var flipped []board.Node
 	for _, id := range ids {
 		n := m.b.Node(id)
 		if n == nil || n.Done == !all {
@@ -116,8 +117,12 @@ func (m *Model) doneAll(ids []string) {
 		if n.Done {
 			n.DoneAt = &now
 		}
+		flipped = append(flipped, *n)
 	}
 	m.save()
+	for _, n := range flipped {
+		m.recordDone(n)
+	}
 }
 
 // decompose breaks the node under the cursor up into a frame (gs): the
