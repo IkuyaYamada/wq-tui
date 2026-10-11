@@ -255,24 +255,3 @@ func TestCompactCardsAreOneLine(t *testing.T) {
 		t.Errorf("a done card's padding should not be struck through: %v", c.st)
 	}
 }
-
-func TestSlimCardsCarryTheTitleInTheirTopBorder(t *testing.T) {
-	b := sample()
-	l := makeLayout(b, 120, densitySlim)
-	if l.rowY[1]-l.rowY[0] != slimCardH+laneH {
-		t.Errorf("a slim row should take %d lines: %v", slimCardH+laneH, l.rowY)
-	}
-	routes := routeEdges(b, l)
-	cv := renderBoard(b, l, routes, view{cursorRow: -1})
-	out := plain(cv)
-	t.Log("\n" + out)
-	if !strings.Contains(strings.Split(out, "\n")[l.rowY[0]], "╭ 要件を洗い") {
-		t.Error("the title should sit in the top border")
-	}
-	for _, rt := range routes {
-		end := rt.path[len(rt.path)-1]
-		if cv.cells[end.y*cv.w+end.x].r != '▼' || !strings.ContainsRune("┬┰", cv.cells[rt.srcPort.y*cv.w+rt.srcPort.x].r) {
-			t.Errorf("%s→%s: a port on the bottom border, ▼ over the target", rt.from, rt.to)
-		}
-	}
-}

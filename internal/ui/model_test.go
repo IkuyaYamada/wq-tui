@@ -1259,26 +1259,35 @@ func TestCompactModelScrollsByCompactRows(t *testing.T) {
 func TestZcZoStepCardDensity(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{})
 	m = press(t, m, "z", "c")
-	if m.density != densitySlim {
+	if m.density != densityCompact {
 		t.Fatalf("zc: %v", m.density)
 	}
-	m = press(t, m, "z", "c", "z", "c")
+	m = press(t, m, "z", "c")
 	if m.density != densityCompact || !strings.Contains(m.msg, "already") {
 		t.Errorf("zc stops at compact: %v %q", m.density, m.msg)
 	}
-	m = press(t, m, "z", "o", "z", "o", "z", "o")
+	m = press(t, m, "z", "o", "z", "o")
 	if m.density != densityFull {
 		t.Errorf("zo back to full: %v", m.density)
 	}
 
 	// The density is handed over to be kept, and a saved one is picked up.
 	var saved []string
-	m = New(t.TempDir(), &board.Board{}, WithDensity("slim"), WithDensitySaver(func(s string) { saved = append(saved, s) }))
-	if m.density != densitySlim {
+	m = New(t.TempDir(), &board.Board{}, WithDensity("compact"), WithDensitySaver(func(s string) { saved = append(saved, s) }))
+	if m.density != densityCompact {
 		t.Errorf("WithDensity: %v", m.density)
 	}
+	m = press(t, m, "z", "o")
+	saved = nil
 	m = press(t, m, "z", "c", "z", "c")
 	if strings.Join(saved, ",") != "compact" {
 		t.Errorf("saved %v: once, and not when nothing changed", saved)
+	}
+}
+
+func TestRetiredSlimDensityStartsFull(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{}, WithDensity("slim"))
+	if m.density != densityFull {
+		t.Errorf("slim should read as full: %v", m.density)
 	}
 }

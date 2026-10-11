@@ -127,8 +127,8 @@ type Option func(*Model)
 // WithCompact draws one-line cards, so far more rows fit on the screen.
 func WithCompact() Option { return func(m *Model) { m.density = densityCompact } }
 
-// WithDensity starts with the cards drawn at the named density ("full",
-// "slim" or "compact"); an unknown name leaves them full.
+// WithDensity starts with the cards drawn at the named density ("full" or
+// "compact"); an unknown name, such as the retired "slim", leaves them full.
 func WithDensity(name string) Option {
 	return func(m *Model) {
 		for d, n := range densityNames {
