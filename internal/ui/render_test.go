@@ -255,3 +255,22 @@ func TestCompactCardsAreOneLine(t *testing.T) {
 		t.Errorf("a done card's padding should not be struck through: %v", c.st)
 	}
 }
+
+func TestEdgesPassOutsideAFrameOnTheEdgeColumn(t *testing.T) {
+	n := func(id string, row, col int) board.Node { return board.Node{ID: id, Title: id, Row: row, Col: col} }
+	b := &board.Board{
+		Nodes: []board.Node{n("a", 0, 5), n("b", 1, 5), n("c", 2, 5), n("d", 3, 5), n("x", 1, 4), n("y", 2, 4), n("z", 1, 3), n("w", 2, 3)},
+		Edges: []board.Edge{{From: "a", To: "d"}},
+		Groups: []board.Group{{ID: "g", Title: "枠", Members: []string{"b", "c", "x", "y"}}},
+	}
+	l := newLayout(b, 100).withFrames(b)
+	routes := routeEdges(b, l)
+	t.Log("\n" + plain(renderBoard(b, l, routes, view{cursorRow: -1})))
+	right := 0
+	for _, p := range routes[0].path {
+		right = max(right, p.x)
+	}
+	if right != l.width-1 {
+		t.Errorf("the edge should run down the outer lane (x=%d), reached x=%d", l.width-1, right)
+	}
+}

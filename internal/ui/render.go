@@ -27,7 +27,7 @@ const (
 	// off with "…". Every card reserves them, so row heights never change.
 	titleLines = 2
 	gap        = 2
-	margin     = 1
+	margin     = 2
 
 	// bufferRows empty rows always follow the lowest node, so there is
 	// somewhere to move the cursor and drop a new node.

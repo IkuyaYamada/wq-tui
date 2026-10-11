@@ -193,7 +193,7 @@ func TestChecksOnCards(t *testing.T) {
 	if !strings.Contains(view, " 1/1 ↗─╮") {
 		t.Errorf("b's card should show 1/1 before its link mark")
 	}
-	if !strings.Contains(view, "↗─╮  ╭────────────────╮") {
+	if !strings.Contains(view, "↗─╮  ╭"+strings.Repeat("─", m.layout().cardW-2)+"╮") {
 		t.Errorf("c has no task list and no label")
 	}
 }
