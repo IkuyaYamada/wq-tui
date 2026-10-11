@@ -222,6 +222,10 @@ var framePalette = [board.FrameColors][2]lipgloss.Color{
 	{"30", "43"},   // teal
 	{"132", "211"}, // rose
 	{"100", "149"}, // olive
+	{"24", "74"},   // steel blue
+	{"124", "167"}, // brick
+	{"91", "170"},  // magenta
+	{"94", "137"},  // brown
 }
 
 func init() {

@@ -89,8 +89,9 @@ func TestFrameColorsGoRound(t *testing.T) {
 	if b.Group("a").Color != 2 {
 		t.Errorf("cycle: %d", b.Group("a").Color)
 	}
-	b.CycleColor("d")
-	if b.Group("d").Color != 1 {
+	last := string(rune('a' + FrameColors - 1))
+	b.CycleColor(last)
+	if b.Group(last).Color != 1 {
 		t.Errorf("cycle wraps: %d", b.Group("d").Color)
 	}
 

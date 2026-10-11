@@ -20,7 +20,7 @@ type Group struct {
 }
 
 // FrameColors is how many colors frames take turns in.
-const FrameColors = 4
+const FrameColors = 8
 
 var ErrNested = errors.New("already in a frame — frames do not nest")
 

@@ -166,8 +166,8 @@ routed through the gaps like an edge, so the pieces still read as one frame:
                           ╰──────────╯
 ```
 
-Each frame has a color, and new frames take turns through four (purple,
-teal, rose, olive), so neighbouring frames tell apart at a glance; `c` on a
+Each frame has a color, and new frames take turns through eight (purple,
+teal, rose, olive, steel blue, brick, magenta, brown), so neighbouring frames tell apart at a glance; `c` on a
 selected frame moves it on to the next. The header's frame name is in the
 frame's color.
 
