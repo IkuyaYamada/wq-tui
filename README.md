@@ -98,6 +98,7 @@ the second title line, the maturity meter and the completion comment
 | --- | --- |
 | `hjkl` / arrows | Move the cursor one cell (empty cells included) |
 | `w` / `b` | Jump to the next / previous node |
+| `L` | LIST: every node's whole title in reading order, with its row, its frame, a done node's comment and the session breaks. `j` / `k` move, `Ctrl+d` / `Ctrl+u` ten at a time, `g` / `G` first / last; `Enter`, `Esc` or `L` goes back to the board on that node |
 | `f` | FOLLOW: walk the edges, however far apart the nodes are. `j` / `k` go to a successor / predecessor (the leftmost of several), `h` / `l` switch to another branch of that step, `Enter` stays where you are, `Esc` goes back to where you started |
 | `Ctrl+d` / `Ctrl+u` | Scroll half a screen down / up, moving the cursor with it |
 | `Ctrl+e` / `Ctrl+y` | Scroll one row down / up; the cursor stays unless it would leave the screen |

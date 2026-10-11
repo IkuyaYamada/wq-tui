@@ -33,6 +33,7 @@ const (
 	modeMoveBreak
 	modeEdit
 	modeFollow
+	modeList
 )
 
 const maxUndo = 200
@@ -83,6 +84,8 @@ type Model struct {
 	copyText func(string) error // puts text on the clipboard; swapped out in tests
 	connFrom string
 	follow   follow // FOLLOW mode's way so far
+
+	listAt, listScroll int // the list (L): the entry under its cursor, lines scrolled off
 
 	width, height int
 	scroll        int
@@ -267,7 +270,7 @@ func (m *Model) reload() {
 var readOnlyKeys = map[string]bool{
 	"h": true, "j": true, "k": true, "l": true,
 	"left": true, "down": true, "up": true, "right": true,
-	"w": true, "b": true, "f": true, "g": true, "G": true, "x": true, // x only after g (gx)
+	"w": true, "b": true, "f": true, "L": true, "g": true, "G": true, "x": true, // x only after g (gx)
 	"enter": true, "q": true, "ctrl+c": true, "R": true, "esc": true,
 	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
 	"ctrl+d": true, "ctrl+u": true, "ctrl+e": true, "ctrl+y": true,
@@ -412,6 +415,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keyConnect(msg)
 		case modeFollow:
 			m.keyFollow(msg.String())
+		case modeList:
+			m.keyList(msg.String())
 		case modeVisual:
 			cmd = m.keyVisual(msg)
 		case modeMoveBreak:
@@ -687,6 +692,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	case "f":
 		m.startFollow()
+	case "L":
+		m.startList()
 	case "w":
 		m.jump(1)
 	case "b":
@@ -1374,11 +1381,12 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · f follow edges · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · f follow edges · L list every title · gg first open · gx open url · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeFollow:    "j / k along an edge down / up · h / l other branch · ⏎ stay here · esc back to the start",
+	modeList:      "j / k next / previous node · ^d/^u ten at a time · g / G first / last · ⏎ / esc / L back to the board on it",
 	modeEdit:      "esc save & close · ^c discard · ⏎ new line",
 	modeMoveBreak: "jk move the session break · i edit label · x delete · ⏎ place · esc cancel",
 	modeVisual:    "hjkl extend · = organize · m move together · g frame (or add to the frame it reaches into) · u unframe · d delete · v block / V rows · esc cancel",
@@ -1402,6 +1410,8 @@ func (m Model) View() string {
 		header += "  " + modeStyle.Background(lipgloss.Color("220")).Render(" CONNECT ")
 	case modeFollow:
 		header += "  " + modeStyle.Background(lipgloss.Color("117")).Render(" FOLLOW ")
+	case modeList:
+		header += "  " + modeStyle.Background(lipgloss.Color("250")).Render(" LIST ")
 	case modeVisual:
 		label := " VISUAL "
 		if m.visLine {
@@ -1411,7 +1421,12 @@ func (m Model) View() string {
 	}
 	header += m.breadcrumb(m.width - lipgloss.Width(header) - 3)
 
-	body := m.viewBoard()
+	var body []string
+	if m.mode == modeList {
+		body = m.viewList()
+	} else {
+		body = m.viewBoard()
+	}
 
 	var footer string
 	switch {
