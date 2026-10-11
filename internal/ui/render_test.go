@@ -270,6 +270,16 @@ func TestBlocksOfShortTitlesAreOneLine(t *testing.T) {
 	if strings.ContainsAny(out, "╭╰┬") {
 		t.Error("blocks have no borders or ports")
 	}
+	// An empty cell is dotted across a block's width, on the row's first line.
+	dots := 0
+	for x := compact.colX(2); x < compact.colX(2)+compact.cardW; x++ {
+		if c := cv.cells[compact.rowY[0]*cv.w+x]; c.r == '·' && c.st == stSlot {
+			dots++
+		}
+	}
+	if dots < compact.cardW/2-1 {
+		t.Errorf("an empty cell should be dotted across its width, got %d dots", dots)
+	}
 	if c := cv.cells[compact.rowY[1]*cv.w+compact.colX(0)]; c.st != stCardSel {
 		t.Errorf("cursor card style %v", c.st)
 	}

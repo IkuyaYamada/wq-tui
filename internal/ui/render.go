@@ -109,7 +109,7 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 		}
 	}
 	// A row of blocks grows until the longest title in it shows whole; full
-// cards keep their height and cut titles short.
+	// cards keep their height and cut titles short.
 	extra := make([]int, rows)
 	for _, n := range b.Nodes {
 		if n.Row >= rows {
@@ -200,6 +200,7 @@ const (
 	stEdgeIn
 	stEdgeOut
 	stDot
+	stSlot // an empty cell among blocks
 	stCard // compact cards: one-line bands
 	stCardSel
 	stCardTarget
@@ -236,6 +237,7 @@ var styles = map[style]lipgloss.Style{
 	stEdgeIn:        lipgloss.NewStyle().Foreground(lipgloss.Color("215")).Bold(true),
 	stEdgeOut:       lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true),
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
+	stSlot:          lipgloss.NewStyle().Foreground(slotFg),
 
 	stCard:           lipgloss.NewStyle().Background(bandBg),
 	stCardSel:        lipgloss.NewStyle().Background(lipgloss.Color("25")).Foreground(lipgloss.Color("231")).Bold(true),
@@ -256,6 +258,7 @@ var (
 	bandDoneBg = lipgloss.AdaptiveColor{Light: "255", Dark: "235"}
 	bandDoneFg = lipgloss.AdaptiveColor{Light: "246", Dark: "243"}
 	bandGreen  = lipgloss.AdaptiveColor{Light: "28", Dark: "108"}
+	slotFg     = lipgloss.AdaptiveColor{Light: "252", Dark: "239"}
 )
 
 // framePalette holds the colors frames take turns in: dim, and lit while
@@ -704,8 +707,17 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	cv := newCanvas(l.width, l.height)
 	drawBreaks(cv, l, b.Breaks, v)
 	// A faint dot marks every cell so empty rows still read as a grid.
+	// Among blocks it is a row of dots as wide as a block, along the
+	// row's first line where the titles start; spaced out so it is not
+	// taken for a session break.
 	for r := range l.rowY {
 		for c := 0; c < board.Cols; c++ {
+			if l.compact {
+				for i := 1; i < l.cardW-1; i += 2 {
+					cv.set(l.colX(c)+i, l.rowY[r], '·', stSlot)
+				}
+				continue
+			}
 			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+(l.h(r)-1)/2, '·', stDot)
 		}
 	}
