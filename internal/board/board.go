@@ -288,8 +288,10 @@ func (b *Board) DeleteRow(row int) {
 	b.deleteBreakRow(row)
 }
 
-// Delete removes id and its edges. A node with exactly one incoming and one
-// outgoing edge is bridged, so A → B → C becomes A → C.
+// Delete removes id and its edges, bridging what went through it: every
+// predecessor is connected to every successor, so A → B → C becomes A → C,
+// unless the successor can already be reached from the predecessor some
+// other way.
 func (b *Board) Delete(id string) error {
 	if b.Node(id) == nil {
 		return ErrNotFound
@@ -310,10 +312,35 @@ func (b *Board) Delete(id string) error {
 		}
 	}
 	b.Edges = edges
-	if len(preds) == 1 && len(succs) == 1 && !b.HasEdge(preds[0], succs[0]) {
-		b.Edges = append(b.Edges, Edge{From: preds[0], To: succs[0]})
+	for _, p := range preds {
+		for _, c := range succs {
+			if !b.reaches(p, c) {
+				b.Edges = append(b.Edges, Edge{From: p, To: c})
+			}
+		}
 	}
 	return nil
+}
+
+// reaches reports whether to can be reached from from along edges.
+func (b *Board) reaches(from, to string) bool {
+	seen := map[string]bool{from: true}
+	queue := []string{from}
+	for len(queue) > 0 {
+		x := queue[0]
+		queue = queue[1:]
+		for _, e := range b.Edges {
+			if e.From != x || seen[e.To] {
+				continue
+			}
+			if e.To == to {
+				return true
+			}
+			seen[e.To] = true
+			queue = append(queue, e.To)
+		}
+	}
+	return false
 }
 
 // ToggleEdge removes the edge between from and to if one exists, in either

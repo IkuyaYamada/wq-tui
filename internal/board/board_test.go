@@ -78,6 +78,28 @@ func TestDeleteBridgesSimpleChain(t *testing.T) {
 	}
 }
 
+func TestDeleteBridgesBranches(t *testing.T) {
+	// A and X feed B; B feeds C and D. A already reaches D through Y.
+	b := &Board{
+		Nodes: []Node{node("A", 0, 0), node("X", 0, 1), node("B", 1, 0), node("Y", 1, 2), node("C", 2, 0), node("D", 2, 1)},
+		Edges: []Edge{{"A", "B"}, {"X", "B"}, {"B", "C"}, {"B", "D"}, {"A", "Y"}, {"Y", "D"}},
+	}
+	if err := b.Delete("B"); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range [][2]string{{"A", "C"}, {"X", "C"}, {"X", "D"}} {
+		if !b.HasEdge(e[0], e[1]) {
+			t.Errorf("missing %s→%s: %v", e[0], e[1], b.Edges)
+		}
+	}
+	if b.HasEdge("A", "D") {
+		t.Errorf("A already reaches D through Y: %v", b.Edges)
+	}
+	if len(b.Edges) != 5 {
+		t.Errorf("edges %v", b.Edges)
+	}
+}
+
 func TestToggleEdge(t *testing.T) {
 	b := &Board{Nodes: []Node{node("A", 1, 0), node("B", 0, 0), node("C", 1, 2), node("D", 2, 0)}}
 

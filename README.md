@@ -117,7 +117,7 @@ the second title line, the maturity meter and the completion comment
 | `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), keeps it with the time of completion and shows it in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away and drops the comment |
 | `Enter` | Open the node's strategy in vim, full screen |
 | `K` | Preview the node beside its card, read-only: when it was completed and the comment, if done, then the strategy. It follows the cursor; `Ctrl+d` / `Ctrl+u` scroll it, `K` / `Esc` close it. For quick fixes without vim, `i` edits the strategy body in place: `Enter` is a new line, `Esc` (or `Ctrl+s`) saves and closes, `Ctrl+c` throws the changes away (asking once if anything changed) |
-| `x` | Delete the node under the cursor (A → B → C is bridged to A → C) |
+| `x` | Delete the node under the cursor. What went through it is bridged: A → B → C becomes A → C, and with branches every node before it is connected to every node after it (skipping pairs already joined some other way) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
 | `[` `Space` / `]` `Space` | Open an empty row above / below the cursor's row (rows below move down; the cursor stays on its node) |
 | `-` | Draw a session break under the cursor's row, with an optional label ("今日はここまで"); `-` on a row that has one removes it |
