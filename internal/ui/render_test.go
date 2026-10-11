@@ -259,8 +259,8 @@ func TestCompactCardsAreOneLine(t *testing.T) {
 func TestEdgesPassOutsideAFrameOnTheEdgeColumn(t *testing.T) {
 	n := func(id string, row, col int) board.Node { return board.Node{ID: id, Title: id, Row: row, Col: col} }
 	b := &board.Board{
-		Nodes: []board.Node{n("a", 0, 5), n("b", 1, 5), n("c", 2, 5), n("d", 3, 5), n("x", 1, 4), n("y", 2, 4), n("z", 1, 3), n("w", 2, 3)},
-		Edges: []board.Edge{{From: "a", To: "d"}},
+		Nodes:  []board.Node{n("a", 0, 5), n("b", 1, 5), n("c", 2, 5), n("d", 3, 5), n("x", 1, 4), n("y", 2, 4), n("z", 1, 3), n("w", 2, 3)},
+		Edges:  []board.Edge{{From: "a", To: "d"}},
 		Groups: []board.Group{{ID: "g", Title: "枠", Members: []string{"b", "c", "x", "y"}}},
 	}
 	l := newLayout(b, 100).withFrames(b)
