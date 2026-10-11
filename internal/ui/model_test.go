@@ -642,8 +642,8 @@ func TestScrollKeys(t *testing.T) {
 		m = press(t, m, "j")
 	}
 	m = press(t, m, "z", "t")
-	if m.scroll != 10*rowH {
-		t.Errorf("zt: scroll %d", m.scroll)
+	if m.scroll != 10*rowH-laneH {
+		t.Errorf("zt: scroll %d, want the lane above the row on screen", m.scroll)
 	}
 	m = press(t, m, "z", "b")
 	if want := 10*rowH + fullCardH + 1 - m.bodyHeight(); m.scroll != want {
@@ -1289,5 +1289,24 @@ func TestRetiredSlimDensityStartsFull(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{}, WithDensity("slim"))
 	if m.density != densityFull {
 		t.Errorf("slim should read as full: %v", m.density)
+	}
+}
+
+func TestZtShowsTheBreakAbove(t *testing.T) {
+	b := &board.Board{}
+	for r := 0; r < 30; r++ {
+		b.Nodes = append(b.Nodes, board.Node{ID: fmt.Sprint(r), Title: fmt.Sprint(r), Row: r})
+	}
+	b.SetBreak(9, "10/12")
+	m := New(t.TempDir(), b)
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 22})
+	m = n.(Model)
+	for i := 0; i < 10; i++ {
+		m = press(t, m, "j")
+	}
+	m = press(t, m, "z", "t")
+	lines := strings.Split(m.View(), "\n")
+	if !strings.Contains(strings.Join(lines[1:4], "\n"), "10/12") {
+		t.Errorf("the break above the row should show at the top:\n%s", strings.Join(lines[:6], "\n"))
 	}
 }

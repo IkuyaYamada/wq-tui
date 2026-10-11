@@ -846,8 +846,8 @@ func (m *Model) setDensity(step int) {
 	}
 }
 
-// align puts the cursor's row at the middle (zz), top (zt) or bottom (zb)
-// of the screen.
+// align puts the cursor's row at the middle (zz), top (zt, just under the
+// row above) or bottom (zb) of the screen.
 func (m *Model) align(key string) {
 	l := m.layout()
 	top := l.rowY[min(m.row, len(l.rowY)-1)]
@@ -856,7 +856,12 @@ func (m *Model) align(key string) {
 	case "z":
 		m.scroll = top + l.cardH/2 - h/2
 	case "t":
+		// Leave what lies between it and the row above on screen: the
+		// lane, and the session break or frame line there.
 		m.scroll = top
+		if r := min(m.row, len(l.rowY)-1); r > 0 {
+			m.scroll = l.rowY[r-1] + l.cardH
+		}
 	case "b":
 		m.scroll = top + l.cardH + 1 - h
 	}
