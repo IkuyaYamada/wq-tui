@@ -418,7 +418,8 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 }
 
 // drawFrameLines draws a frame's outline and necks, heavy when the frame
-// is selected. Edges are drawn later and win where they cross it.
+// is selected. Edges are drawn later; only the lit node's win where they
+// cross it.
 func drawFrameLines(cv *canvas, f frame, st style, heavy bool) {
 	for p, bits := range f.lines {
 		r := frameRune(bits)
