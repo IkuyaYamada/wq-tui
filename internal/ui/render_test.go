@@ -355,3 +355,19 @@ func TestBoardSitsInTheMiddle(t *testing.T) {
 		}
 	}
 }
+
+func TestEmptyRowAmongBlocksSaysSo(t *testing.T) {
+	b := &board.Board{Nodes: []board.Node{
+		{ID: "a", Title: "下書きを書く", Row: 0, Col: 0},
+		{ID: "b", Title: "見直す", Row: 2, Col: 1},
+	}}
+	l := makeLayout(b, 120, densityBlocks)
+	out := strings.Split(plain(renderBoard(b, l, routeEdges(b, l), view{cursorRow: 0, cursorCol: 0, cursorSt: stBorderSel})), "\n")
+	t.Log("\n" + strings.Join(out, "\n"))
+	if !strings.Contains(out[l.rowY[1]], "empty row") {
+		t.Errorf("row 1 has no nodes and should say so: %q", out[l.rowY[1]])
+	}
+	if strings.Contains(out[l.rowY[3]], "empty row") {
+		t.Errorf("rows under the last node are room to grow, not empty rows: %q", out[l.rowY[3]])
+	}
+}
