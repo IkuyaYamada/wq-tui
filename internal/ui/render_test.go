@@ -270,15 +270,8 @@ func TestBlocksOfShortTitlesAreOneLine(t *testing.T) {
 	if strings.ContainsAny(out, "╭╰┬") {
 		t.Error("blocks have no borders or ports")
 	}
-	// An empty cell is dotted across a block's width, on the row's first line.
-	dots := 0
-	for x := compact.colX(2); x < compact.colX(2)+compact.cardW; x++ {
-		if c := cv.cells[compact.rowY[0]*cv.w+x]; c.r == '·' && c.st == stSlot {
-			dots++
-		}
-	}
-	if dots < compact.cardW/2-1 {
-		t.Errorf("an empty cell should be dotted across its width, got %d dots", dots)
+	if c := cv.cells[compact.rowY[0]*cv.w+compact.colX(2)+1]; c.r != ' ' {
+		t.Errorf("an empty cell in a row with nodes should be blank, got %q", c.r)
 	}
 	if c := cv.cells[compact.rowY[1]*cv.w+compact.colX(0)]; c.st != stCardSel {
 		t.Errorf("cursor card style %v", c.st)
@@ -356,7 +349,7 @@ func TestBoardSitsInTheMiddle(t *testing.T) {
 	}
 }
 
-func TestEmptyRowAmongBlocksSaysSo(t *testing.T) {
+func TestOnlyEmptyRowsAmongBlocksAreDotted(t *testing.T) {
 	b := &board.Board{Nodes: []board.Node{
 		{ID: "a", Title: "下書きを書く", Row: 0, Col: 0},
 		{ID: "b", Title: "見直す", Row: 2, Col: 1},
@@ -364,10 +357,12 @@ func TestEmptyRowAmongBlocksSaysSo(t *testing.T) {
 	l := makeLayout(b, 120, densityBlocks)
 	out := strings.Split(plain(renderBoard(b, l, routeEdges(b, l), view{cursorRow: 0, cursorCol: 0, cursorSt: stBorderSel})), "\n")
 	t.Log("\n" + strings.Join(out, "\n"))
-	if !strings.Contains(out[l.rowY[1]], "empty row") {
-		t.Errorf("row 1 has no nodes and should say so: %q", out[l.rowY[1]])
+	for r, want := range map[int]bool{0: false, 1: true, 2: false, 3: true} {
+		if got := strings.Count(out[l.rowY[r]], "·") > board.Cols*l.cardW/3; got != want {
+			t.Errorf("row %d dotted across = %v, want %v: %q", r, got, want, out[l.rowY[r]])
+		}
 	}
-	if strings.Contains(out[l.rowY[3]], "empty row") {
-		t.Errorf("rows under the last node are room to grow, not empty rows: %q", out[l.rowY[3]])
+	if strings.Contains(out[l.rowY[0]], "·") {
+		t.Errorf("a row with nodes should have no dots: %q", out[l.rowY[0]])
 	}
 }

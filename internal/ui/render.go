@@ -200,9 +200,8 @@ const (
 	stEdgeIn
 	stEdgeOut
 	stDot
-	stSlot      // an empty cell among blocks
-	stSlotLabel // "empty row" across a row of blocks with no nodes
-	stCard      // compact cards: one-line bands
+	stSlot // a row of blocks with no nodes
+	stCard // compact cards: one-line bands
 	stCardSel
 	stCardTarget
 	stCardMove
@@ -239,7 +238,6 @@ var styles = map[style]lipgloss.Style{
 	stEdgeOut:       lipgloss.NewStyle().Foreground(lipgloss.Color("117")).Bold(true),
 	stDot:           lipgloss.NewStyle().Foreground(lipgloss.Color("237")),
 	stSlot:          lipgloss.NewStyle().Foreground(slotFg),
-	stSlotLabel:     lipgloss.NewStyle().Foreground(bandDoneFg).Italic(true),
 
 	stCard:           lipgloss.NewStyle().Background(bandBg),
 	stCardSel:        lipgloss.NewStyle().Background(lipgloss.Color("25")).Foreground(lipgloss.Color("231")).Bold(true),
@@ -709,27 +707,21 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 	cv := newCanvas(l.width, l.height)
 	drawBreaks(cv, l, b.Breaks, v)
 	// A faint dot marks every cell so empty rows still read as a grid.
-	// Among blocks it is a row of dots as wide as a block, along the
-	// row's first line where the titles start; spaced out so it is not
-	// taken for a session break.
+	// Among blocks only rows with no nodes are dotted, straight across the
+	// board, so a dotted line means an empty row; the dots are spaced out
+	// so they are not taken for a session break.
 	used := map[int]bool{}
 	for _, n := range b.Nodes {
 		used[n.Row] = true
 	}
 	for r := range l.rowY {
-		// A row left empty between nodes is dotted straight across and
-		// says so, so it does not pass for a row of empty cells.
-		if l.compact && !used[r] && r < b.MaxRow() {
-			drawEmptyRow(cv, l, r)
+		if l.compact {
+			if !used[r] {
+				drawEmptyRow(cv, l, r)
+			}
 			continue
 		}
 		for c := 0; c < board.Cols; c++ {
-			if l.compact {
-				for i := 1; i < l.cardW-1; i += 2 {
-					cv.set(l.colX(c)+i, l.rowY[r], '·', stSlot)
-				}
-				continue
-			}
 			cv.set(l.colX(c)+l.cardW/2, l.rowY[r]+(l.h(r)-1)/2, '·', stDot)
 		}
 	}
@@ -1006,16 +998,12 @@ func blockLines(n board.Node, cardW int) (rows []string, note string) {
 	return rows, note
 }
 
-// drawEmptyRow dots a row with no nodes across the whole board, with
-// "empty row" in the middle.
+// drawEmptyRow dots a row with no nodes across the whole board.
 func drawEmptyRow(cv *canvas, l layout, r int) {
 	x0, x1, y := l.colX(0), l.colX(board.Cols-1)+l.cardW, l.rowY[r]
 	for x := x0 + 1; x < x1-1; x += 2 {
 		cv.set(x, y, '·', stSlot)
 	}
-	label := " empty row "
-	x := x0 + (x1-x0-len(label))/2
-	cv.text(x, y, label, stSlotLabel)
 }
 
 // drawCompactEmpty marks an empty cell as a dashed line: the cursor, or
