@@ -285,6 +285,7 @@ var readOnlyKeys = map[string]bool{
 	"y": true,                       // yy and yp only copy; p waits for R
 	"K": true,                       // preview
 	"/": true, "n": true, "N": true, // search
+	"r": true, // gr only copies; gR runs the agent, not wq
 }
 
 // selected is the node under the cursor, if any.
@@ -405,7 +406,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.mode == modeNormal || m.mode == modeVisual {
 			key := msg.String()
-			if key == "R" && m.mode == modeNormal {
+			if key == "R" && m.mode == modeNormal && !m.pendingG {
 				m.reload()
 				break
 			}
@@ -647,8 +648,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			m.cursorTo(firstOpen(m.b))
 		case "x":
 			m.openNodeURL()
-		case "r":
-			return m.resumeSession()
+		case "r", "R":
+			return m.resumeSession(key == "R")
 		case "s":
 			return m.decompose()
 		}
@@ -1413,7 +1414,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · f follow edges · L list every title · gg first open · gx open url · gr resume the node's agent session · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",

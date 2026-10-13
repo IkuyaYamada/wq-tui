@@ -69,3 +69,25 @@ func TestSessionEditedInTheHeaderIsAdopted(t *testing.T) {
 		t.Errorf("gr on a session that is not on this machine: %q", m.msg)
 	}
 }
+
+func TestGRCopiesTheResumeCommand(t *testing.T) {
+	codex, claude := fakeSessions(t)
+	codex("01a1-c0de", "/src/my app")
+	claude("5e55-c1a0", "/src/api")
+	b := &board.Board{Nodes: []board.Node{
+		{ID: "A", Title: "設計", Row: 0, Col: 0, Session: "01a1-c0de"},
+		{ID: "B", Title: "実装", Row: 0, Col: 1, Session: "5e55-c1a0"},
+	}}
+	m := New(t.TempDir(), b)
+	var copied []string
+	m.copyText = func(s string) error { copied = append(copied, s); return nil }
+	m.row, m.col = 0, 0
+	m = press(t, m, "g", "r", "l", "g", "r")
+	want := []string{"cd '/src/my app' && codex resume 01a1-c0de", "cd /src/api && claude --resume 5e55-c1a0"}
+	if strings.Join(copied, "\n") != strings.Join(want, "\n") {
+		t.Errorf("copied %q, want %q", copied, want)
+	}
+	if m.mode != modeNormal || !strings.Contains(m.msg, "copied") {
+		t.Errorf("mode %v msg %q", m.mode, m.msg)
+	}
+}

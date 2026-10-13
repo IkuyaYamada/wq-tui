@@ -107,8 +107,10 @@ type sessionDoneMsg struct {
 	err   error
 }
 
-// resumeSession (gr) reopens the node's session where it ran.
-func (m *Model) resumeSession() tea.Cmd {
+// resumeSession reopens the node's session where it ran: gr copies the
+// command to run it in another terminal, so the board stays usable
+// meanwhile; gR (inPlace) runs it here, wq stepping aside until it exits.
+func (m *Model) resumeSession(inPlace bool) tea.Cmd {
 	n := m.selected()
 	if n == nil {
 		return nil
@@ -126,7 +128,27 @@ func (m *Model) resumeSession() tea.Cmd {
 	if s.agent == "claude" {
 		args = []string{"--resume", s.id}
 	}
-	return runAgent(n.ID, s.agent, s.cwd, args)
+	if inPlace {
+		return runAgent(n.ID, s.agent, s.cwd, args)
+	}
+	line := strings.Join(append([]string{s.agent}, args...), " ")
+	if s.cwd != "" {
+		line = "cd " + shellQuote(s.cwd) + " && " + line
+	}
+	if err := m.copyText(line); err != nil {
+		m.msg = "gr: " + err.Error()
+		return nil
+	}
+	m.msg = "copied " + line + " · paste it in another terminal (gR runs it here)"
+	return nil
+}
+
+// shellQuote quotes s for a POSIX shell when it needs it.
+func shellQuote(s string) string {
+	if s != "" && strings.Trim(s, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/._-+~@%:,=") == "" && s[0] != '~' {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func runAgent(id, agent, dir string, args []string) tea.Cmd {
