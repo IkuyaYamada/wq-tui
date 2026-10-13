@@ -101,6 +101,8 @@ board. Left out: the maturity meter (`K` shows it).
 | `hjkl` / arrows | Move the cursor one cell (empty cells included) |
 | `w` / `b` | Jump to the next / previous node |
 | `L` | LIST: every node's whole title in reading order, with its row, its frame, a done node's comment and the session breaks. `j` / `k` move, `Ctrl+d` / `Ctrl+u` ten at a time, `g` / `G` first / last; `Enter`, `Esc` or `L` goes back to the board on that node |
+| `/` | Search titles, completion comments and frame titles (case ignored). The cursor jumps to the first match as you type, from the cursor on; `Enter` stays there, `Esc` goes back. The footer shows which match it is (`/schema  2/5`) |
+| `n` / `N` | Next / previous match of the last search, wrapping around the board |
 | `f` | FOLLOW: walk the edges, however far apart the nodes are. `j` / `k` go to a successor / predecessor (the leftmost of several), `h` / `l` switch to another branch of that step, `Enter` stays where you are, `Esc` goes back to where you started |
 | `Ctrl+d` / `Ctrl+u` | Scroll half a screen down / up, moving the cursor with it |
 | `Ctrl+e` / `Ctrl+y` | Scroll one row down / up; the cursor stays unless it would leave the screen |
@@ -109,7 +111,7 @@ board. Left out: the maturity meter (`K` shows it).
 | `gg` / `G` | The topmost node not yet done (leftmost first; the top-left cell when all are done) / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
 | `gr` | Resume the node's agent session (`session:`), in the directory it ran in: `codex resume <id>` or `claude --resume <id>`. wq steps aside until the agent exits. Nodes with a session show ↻ |
-| `a` / `n` | Add a node on the cursor cell (or the nearest empty cell if taken) |
+| `a` | Add a node on the cursor cell (or the nearest empty cell if taken) |
 | `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |

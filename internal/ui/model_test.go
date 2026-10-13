@@ -127,7 +127,7 @@ func TestBufferRowsAcceptNewNodes(t *testing.T) {
 	if m.row != 2+bufferRows {
 		t.Errorf("cursor stopped at row %d", m.row)
 	}
-	m = press(t, m, "h", "n", "もっと下", "<enter>")
+	m = press(t, m, "h", "a", "もっと下", "<enter>")
 	if got := titles(m.b)["もっと下"]; got != [2]int{5, 1} {
 		t.Errorf("added at %v", got)
 	}
@@ -1308,5 +1308,57 @@ func TestZtShowsTheBreakAbove(t *testing.T) {
 	lines := strings.Split(m.View(), "\n")
 	if !strings.Contains(strings.Join(lines[1:4], "\n"), "10/12") {
 		t.Errorf("the break above the row should show at the top:\n%s", strings.Join(lines[:6], "\n"))
+	}
+}
+
+func TestSlashSearchesAndNGoesOn(t *testing.T) {
+	n := func(id, title string, row, col int) board.Node {
+		return board.Node{ID: id, Title: title, Row: row, Col: col}
+	}
+	b := &board.Board{
+		Nodes: []board.Node{
+			n("A", "Schema design", 0, 0), n("B", "API", 1, 2), n("C", "schema migration", 2, 1), n("D", "Release", 3, 0),
+		},
+		Groups: []board.Group{{ID: "G", Title: "Launch", Members: []string{"D"}}},
+	}
+	b.Nodes[1].Done, b.Nodes[1].DoneNote = true, "kept the old SCHEMA"
+	m := New(t.TempDir(), b)
+	m.row, m.col = 0, 0
+	at := func(want string) {
+		t.Helper()
+		if n := m.selected(); n == nil || n.ID != want {
+			t.Fatalf("cursor on %v (%d,%d), want %s; msg %q", n, m.row, m.col, want, m.msg)
+		}
+	}
+
+	// Typing jumps as it goes, ignoring case; the cursor's own node counts.
+	m = press(t, m, "/", "sche")
+	at("A")
+	m = press(t, m, "<enter>")
+	if m.mode != modeNormal || m.msg != "/sche  1/3" {
+		t.Fatalf("mode %v msg %q", m.mode, m.msg)
+	}
+	// n walks on (a done comment matches too) and wraps; N walks back.
+	m = press(t, m, "n")
+	at("B")
+	m = press(t, m, "n", "n")
+	at("A")
+	m = press(t, m, "N")
+	at("C")
+
+	// A frame's title finds its members.
+	m = press(t, m, "/", "launch", "<enter>")
+	at("D")
+
+	// Esc goes back to where the search began; so does a miss.
+	m = press(t, m, "/", "api", "<esc>")
+	at("D")
+	m = press(t, m, "/", "nothing", "<enter>")
+	at("D")
+	if m.msg != "no match: nothing" {
+		t.Errorf("msg %q", m.msg)
+	}
+	if m.searchQuery != "launch" {
+		t.Errorf("a cancelled or missed search should keep the last one: %q", m.searchQuery)
 	}
 }

@@ -47,17 +47,20 @@ type Model struct {
 	// The cursor is a cell, not a node, so it can rest on empty cells.
 	row, col int
 
-	mode       mode
-	input      textinput.Model
-	inputNew   bool // the node being titled was just created; Esc discards it
-	inputDone  bool // the prompt asks for a completion comment, not a title
-	inputBreak bool // the prompt asks for a session break label
-	inputFrame bool // the prompt asks for a frame's title (new when frameIDs is set)
-	frameIDs   []string
-	prevCur    [2]int // cursor to restore when a new node is discarded
-	moveIDs    []string
-	moveOrig   *board.Board
-	moveCur    [2]int
+	mode        mode
+	input       textinput.Model
+	inputNew    bool   // the node being titled was just created; Esc discards it
+	inputDone   bool   // the prompt asks for a completion comment, not a title
+	inputBreak  bool   // the prompt asks for a session break label
+	inputFrame  bool   // the prompt asks for a frame's title (new when frameIDs is set)
+	inputSearch bool   // the prompt is a search (/)
+	searchOrig  [2]int // cursor when the search began; Esc goes back there
+	searchQuery string // the last search, for n / N
+	frameIDs    []string
+	prevCur     [2]int // cursor to restore when a new node is discarded
+	moveIDs     []string
+	moveOrig    *board.Board
+	moveCur     [2]int
 
 	// yank is the node yy copied (title, url and strategy body as they were
 	// then). While it is held, a ghost card shows where p would paste a
@@ -279,8 +282,9 @@ var readOnlyKeys = map[string]bool{
 	"v": true, "V": true, // selecting is harmless; m, d and = on it are not
 	"ctrl+d": true, "ctrl+u": true, "ctrl+e": true, "ctrl+y": true,
 	"z": true, "t": true, // scrolling (zz / zt / zb)
-	"y": true, // yy and yp only copy; p waits for R
-	"K": true, // preview
+	"y": true,                       // yy and yp only copy; p waits for R
+	"K": true,                       // preview
+	"/": true, "n": true, "N": true, // search
 }
 
 // selected is the node under the cursor, if any.
@@ -717,8 +721,14 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		m.msg = "g…"
 	case "G":
 		m.row, m.col = max(m.b.MaxRow(), 0), 0
-	case "o", "O", "a", "n":
+	case "o", "O", "a":
 		return m.startNew(key)
+	case "/":
+		return m.startSearch()
+	case "n":
+		m.searchNext(1)
+	case "N":
+		m.searchNext(-1)
 	case "i":
 		if n == nil {
 			return nil
@@ -975,6 +985,9 @@ func (m *Model) startInput(prompt, value string) tea.Cmd {
 }
 
 func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
+	if m.inputSearch {
+		return m.keySearch(k)
+	}
 	if m.inputFrame {
 		switch k.String() {
 		case "enter", "esc", "ctrl+c":
@@ -1400,7 +1413,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · f follow edges · L list every title · gg first open · gx open url · gr resume the node's agent session · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · f follow edges · L list every title · gg first open · gx open url · gr resume the node's agent session · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
