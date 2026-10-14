@@ -1148,22 +1148,25 @@ func TestYankAndPasteCopiesANode(t *testing.T) {
 		t.Errorf("cursor at %d,%d, want on the copy", m.row, m.col)
 	}
 
-	// The yank stays held: p again lands next to the copy.
-	if m = press(t, m, "p"); len(m.b.Nodes) != 3 || m.b.At(0, 3) == nil {
-		t.Errorf("second p: %v", titles(m.b))
+	// One paste lets the yank go: no ghost, and p again does nothing.
+	if v := body(m); strings.Count(v, "設計") != 2 {
+		t.Errorf("the ghost should be gone after the paste:\n%s", v)
+	}
+	if m = press(t, m, "p"); len(m.b.Nodes) != 2 {
+		t.Errorf("second p pasted: %v", titles(m.b))
 	}
 
-	// One undo takes one paste back.
-	if m = press(t, m, "u"); len(m.b.Nodes) != 2 {
+	// One undo takes the paste back.
+	if m = press(t, m, "u"); len(m.b.Nodes) != 1 {
 		t.Errorf("undo left %d nodes", len(m.b.Nodes))
 	}
 
-	// Esc lets the yank go: no ghost, and p does nothing.
-	m = press(t, m, "<esc>")
-	if v := body(m); strings.Count(v, "設計") != 2 {
+	// Esc lets a yank go before any paste.
+	m = press(t, m, "y", "y", "<esc>")
+	if v := body(m); strings.Count(v, "設計") != 1 {
 		t.Errorf("the ghost should be gone:\n%s", v)
 	}
-	if m = press(t, m, "p"); len(m.b.Nodes) != 2 {
+	if m = press(t, m, "p"); len(m.b.Nodes) != 1 {
 		t.Errorf("p after esc pasted")
 	}
 }

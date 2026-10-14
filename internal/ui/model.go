@@ -1146,6 +1146,7 @@ func (m *Model) paste() {
 			m.msg = "strategy: " + err.Error()
 		}
 	}
+	m.yank, m.yankStrategy = nil, "" // one paste per yank
 }
 
 // keyMove slides the moving nodes as one block; the cursor rides along.

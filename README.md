@@ -115,7 +115,7 @@ board. Left out: the maturity meter (`K` shows it).
 | `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
 | `i` | Rename (or edit `title:` in vim) |
 | `m` | Move mode: `hjkl` slides to the next empty cell, `Enter` places, `Esc` cancels |
-| `yy` / `p` | Copy the node under the cursor: a dashed ghost then shows where it would go (the empty cell nearest the cursor) and follows the cursor; `p` pastes a copy there (title, url and strategy; open, no edges) and moves onto it. The copy stays held for more `p`; `Esc` lets it go |
+| `yy` / `p` | Copy the node under the cursor: a dashed ghost then shows where it would go (the empty cell nearest the cursor) and follows the cursor; `p` pastes a copy there (title, url and strategy; open, no edges) and moves onto it, letting the copy go (one paste per `yy`); `Esc` lets it go without pasting |
 | `yp` | Copy the absolute path of the strategy.md under the cursor (the frame's when one is selected) to the clipboard: pbcopy / clip.exe / wl-copy / xclip / xsel, or OSC 52 over ssh or when none is found. Works on a stale board too |
 | `v` / `V` | Visual mode: select a block of cells / whole rows; `m` moves the selection together, `d` deletes it, `=` organizes it |
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
