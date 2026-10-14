@@ -91,3 +91,45 @@ func TestGRCopiesTheResumeCommand(t *testing.T) {
 		t.Errorf("mode %v msg %q", m.mode, m.msg)
 	}
 }
+
+func TestGRAsksForAMissingSession(t *testing.T) {
+	codex, _ := fakeSessions(t)
+	codex("01a1-c0de", "/src/app")
+	dir := t.TempDir()
+	m := New(dir, &board.Board{Nodes: []board.Node{{ID: "A", Title: "設計", Row: 0, Col: 0}}})
+	var copied []string
+	m.copyText = func(s string) error { copied = append(copied, s); return nil }
+	m.row, m.col = 0, 0
+
+	// Esc gives up without touching the node.
+	m = press(t, m, "g", "r")
+	if m.mode != modeInput || m.input.Prompt != "session> " {
+		t.Fatalf("gr without a session should ask: mode %v prompt %q", m.mode, m.input.Prompt)
+	}
+	m = press(t, m, "01a1-c0de", "<esc>")
+	if m.selected().Session != "" || len(copied) != 0 {
+		t.Fatalf("esc kept %q, copied %v", m.selected().Session, copied)
+	}
+
+	// An id not on this machine is refused.
+	m = press(t, m, "g", "r", "typo", "<enter>")
+	if m.selected().Session != "" || !strings.Contains(m.msg, "not found") {
+		t.Fatalf("a wrong id: session %q msg %q", m.selected().Session, m.msg)
+	}
+
+	// A pasted resume command will do: the id is kept, in the header too,
+	// and the command is copied.
+	m = press(t, m, "g", "r", "codex resume 01a1-c0de", "<enter>")
+	if got := m.selected().Session; got != "01a1-c0de" {
+		t.Fatalf("session %q, msg %q", got, m.msg)
+	}
+	if h, _ := readStrategyHeader(filepath.Join(board.NodeDir(dir, "A"), "strategy.md")); h.session != "01a1-c0de" {
+		t.Errorf("header session %q", h.session)
+	}
+	if len(copied) != 1 || copied[0] != "cd /src/app && codex resume 01a1-c0de" {
+		t.Errorf("copied %v", copied)
+	}
+	if m = press(t, m, "u"); m.selected().Session != "" {
+		t.Errorf("undo should take the session back")
+	}
+}

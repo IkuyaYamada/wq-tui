@@ -116,8 +116,13 @@ func (m *Model) resumeSession(inPlace bool) tea.Cmd {
 		return nil
 	}
 	if n.Session == "" {
-		m.msg = "no session: put its id in the header's session:"
-		return nil
+		// Ask for it; Esc leaves the node as it was.
+		if m.stale {
+			m.msg = staleMsg
+			return nil
+		}
+		m.inputSession = true
+		return m.startInput("session> ", "")
 	}
 	s, ok := findSession(n.Session)
 	if !ok {
@@ -141,6 +146,42 @@ func (m *Model) resumeSession(inPlace bool) tea.Cmd {
 	}
 	m.msg = "copied " + line + " · paste it in another terminal (gR runs it here)"
 	return nil
+}
+
+// keySession handles a key on the prompt asking for the node's session.
+// Enter keeps the id (the last word, so a pasted "codex resume <id>" will
+// do) once it is found on this machine, then copies the command as gr
+// does; Esc gives up.
+func (m *Model) keySession(k tea.KeyMsg) tea.Cmd {
+	switch k.String() {
+	case "enter", "esc", "ctrl+c":
+		m.input.Blur()
+		m.mode = modeNormal
+		m.inputSession = false
+		m.toASCII()
+		f := strings.Fields(m.input.Value())
+		n := m.selected()
+		if k.String() != "enter" || len(f) == 0 || n == nil {
+			return nil
+		}
+		id := f[len(f)-1]
+		if _, ok := findSession(id); !ok {
+			m.msg = "session " + id + " not found"
+			return nil
+		}
+		m.checkpoint()
+		n = m.selected()
+		n.Session = id
+		m.save()
+		if _, err := strategyPath(m.dir, *n); err != nil {
+			m.msg = "strategy: " + err.Error()
+			return nil
+		}
+		return m.resumeSession(false)
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(k)
+	return cmd
 }
 
 // shellQuote quotes s for a POSIX shell when it needs it.

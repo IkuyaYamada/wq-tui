@@ -48,21 +48,22 @@ type Model struct {
 	// The cursor is a cell, not a node, so it can rest on empty cells.
 	row, col int
 
-	mode        mode
-	input       textinput.Model
-	inputNew    bool   // the node being titled was just created; Esc discards it
-	inputDone   bool   // the prompt asks for a completion comment, not a title
-	inputBreak  bool   // the prompt asks for a session break label
-	inputFrame  bool   // the prompt asks for a frame's title (new when frameIDs is set)
-	inputSearch bool   // the prompt is a search (/)
-	searchOrig  [2]int // cursor when the search began; Esc goes back there
-	searchQuery string // the last search, for n / N
-	fastOrig    [2]int // cursor when FAST mode began; Esc goes back there
-	frameIDs    []string
-	prevCur     [2]int // cursor to restore when a new node is discarded
-	moveIDs     []string
-	moveOrig    *board.Board
-	moveCur     [2]int
+	mode         mode
+	input        textinput.Model
+	inputNew     bool   // the node being titled was just created; Esc discards it
+	inputDone    bool   // the prompt asks for a completion comment, not a title
+	inputBreak   bool   // the prompt asks for a session break label
+	inputFrame   bool   // the prompt asks for a frame's title (new when frameIDs is set)
+	inputSearch  bool   // the prompt is a search (/)
+	searchOrig   [2]int // cursor when the search began; Esc goes back there
+	searchQuery  string // the last search, for n / N
+	inputSession bool   // the prompt asks for the node's agent session (gr without one)
+	fastOrig     [2]int // cursor when FAST mode began; Esc goes back there
+	frameIDs     []string
+	prevCur      [2]int // cursor to restore when a new node is discarded
+	moveIDs      []string
+	moveOrig     *board.Board
+	moveCur      [2]int
 
 	// yank is the node yy copied (title, url and strategy body as they were
 	// then). While it is held, a ghost card shows where p would paste a
@@ -995,6 +996,9 @@ func (m *Model) startInput(prompt, value string) tea.Cmd {
 func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
 	if m.inputSearch {
 		return m.keySearch(k)
+	}
+	if m.inputSession {
+		return m.keySession(k)
 	}
 	if m.inputFrame {
 		switch k.String() {

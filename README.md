@@ -111,7 +111,7 @@ board. Left out: the maturity meter (`K` shows it).
 | `zc` / `zo` | Draw the cards as blocks / full cards (see [Card density](#card-density)) |
 | `gg` / `G` | The topmost node not yet done (leftmost first; the top-left cell when all are done) / last row with nodes |
 | `gx` | Open the node's `url:` in the browser (nodes with a link show ↗ on their frame) |
-| `gr` / `gR` | Resume the node's agent session (`session:`), in the directory it ran in. `gr` copies the command (`cd <dir> && codex resume <id>`, or `claude --resume <id>`) to paste into another terminal, so the board stays usable while the agent works; `gR` runs it here, wq stepping aside until the agent exits. Nodes with a session show ↻ |
+| `gr` / `gR` | Resume the node's agent session (`session:`), in the directory it ran in. `gr` copies the command (`cd <dir> && codex resume <id>`, or `claude --resume <id>`) to paste into another terminal, so the board stays usable while the agent works; `gR` runs it here, wq stepping aside until the agent exits. On a node without one, `gr` asks for it (`session> `; a pasted `codex resume <id>` works too), keeps it once it is found on this machine and copies the command; `Esc` gives up. Nodes with a session show ↻ |
 | `a` | Add a node on the cursor cell (or the nearest empty cell if taken) |
 | `o` / `O` | Insert a node directly below / above, taking over the outgoing / incoming edges (A → B becomes A → new → B). A free cell is used as is; if it is taken, off the board, or an edge would turn sideways, an empty row is opened first (like `]` / `[` `Space`) |
 | `i` | Rename (or edit `title:` in vim) |
