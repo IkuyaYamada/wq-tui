@@ -34,6 +34,7 @@ const (
 	modeEdit
 	modeFollow
 	modeList
+	modeFast
 )
 
 const maxUndo = 200
@@ -56,6 +57,7 @@ type Model struct {
 	inputSearch bool   // the prompt is a search (/)
 	searchOrig  [2]int // cursor when the search began; Esc goes back there
 	searchQuery string // the last search, for n / N
+	fastOrig    [2]int // cursor when FAST mode began; Esc goes back there
 	frameIDs    []string
 	prevCur     [2]int // cursor to restore when a new node is discarded
 	moveIDs     []string
@@ -285,6 +287,7 @@ var readOnlyKeys = map[string]bool{
 	"y": true,                       // yy and yp only copy; p waits for R
 	"K": true,                       // preview
 	"/": true, "n": true, "N": true, // search
+	"s": true, // FAST mode only moves
 	"r": true, // gr only copies; gR runs the agent, not wq
 }
 
@@ -429,6 +432,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.keyFollow(msg.String())
 		case modeList:
 			m.keyList(msg.String())
+		case modeFast:
+			m.keyFast(msg.String())
 		case modeVisual:
 			cmd = m.keyVisual(msg)
 		case modeMoveBreak:
@@ -711,6 +716,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		return tea.Quit
 	case "f":
 		m.startFollow()
+	case "s":
+		m.startFast()
 	case "L":
 		m.startList()
 	case "w":
@@ -1415,11 +1422,12 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · s fast: node to node · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
 	modeFollow:    "j / k along an edge down / up · h / l other branch · ⏎ stay here · esc back to the start",
+	modeFast:      "j / k nearest node below / above (any column) · h / l next node in the row · ⏎ / s stay here · esc back to the start",
 	modeList:      "j / k next / previous node · ^d/^u ten at a time · g / G first / last · ⏎ / esc / L back to the board on it",
 	modeEdit:      "esc save & close · ^c discard · ⏎ new line",
 	modeMoveBreak: "jk move the session break · i edit label · x delete · ⏎ place · esc cancel",
@@ -1444,6 +1452,8 @@ func (m Model) View() string {
 		header += "  " + modeStyle.Background(lipgloss.Color("220")).Render(" CONNECT ")
 	case modeFollow:
 		header += "  " + modeStyle.Background(lipgloss.Color("117")).Render(" FOLLOW ")
+	case modeFast:
+		header += "  " + modeStyle.Background(lipgloss.Color("150")).Render(" FAST ")
 	case modeList:
 		header += "  " + modeStyle.Background(lipgloss.Color("250")).Render(" LIST ")
 	case modeVisual:

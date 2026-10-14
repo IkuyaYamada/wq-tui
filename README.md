@@ -103,6 +103,7 @@ board. Left out: the maturity meter (`K` shows it).
 | `L` | LIST: every node's whole title in reading order, with its row, its frame, a done node's comment and the session breaks. `j` / `k` move, `Ctrl+d` / `Ctrl+u` ten at a time, `g` / `G` first / last; `Enter`, `Esc` or `L` goes back to the board on that node |
 | `/` | Search titles, completion comments and frame titles (case ignored). The cursor jumps to the first match as you type, from the cursor on; `Enter` stays there, `Esc` goes back. The footer shows which match it is (`/schema  2/5`) |
 | `n` / `N` | Next / previous match of the last search, wrapping around the board |
+| `s` | FAST: move node to node, never stopping on empty cells. `j` / `k` go to the nearest node in the next row down / up that has one, whatever its column (the closest column, then the left one); `h` / `l` to the next node left / right in the row. `Enter` or `s` stays where you are, `Esc` goes back to where you started |
 | `f` | FOLLOW: walk the edges, however far apart the nodes are. `j` / `k` go to a successor / predecessor (the leftmost of several), `h` / `l` switch to another branch of that step, `Enter` stays where you are, `Esc` goes back to where you started |
 | `Ctrl+d` / `Ctrl+u` | Scroll half a screen down / up, moving the cursor with it |
 | `Ctrl+e` / `Ctrl+y` | Scroll one row down / up; the cursor stays unless it would leave the screen |
