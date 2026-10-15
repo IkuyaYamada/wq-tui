@@ -1171,6 +1171,93 @@ func TestYankAndPasteCopiesANode(t *testing.T) {
 	}
 }
 
+func TestYankSequel(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = n.(Model)
+	m = press(t, m, "a", "設計", "<enter>", "o", "後", "<enter>", "g", "g")
+	src := m.selected()
+	if err := writeStrategyBody(dir, *src, "まず読む"); err != nil {
+		t.Fatal(err)
+	}
+	m = press(t, m, "v", "j", "g", "枠", "<enter>", "g", "g")
+	gi := m.b.GroupOf(src.ID)
+	if gi < 0 {
+		t.Fatal("setup: no frame")
+	}
+
+	// yo holds a sequel; the cursor goes past the frame and Enter places
+	// it there: #2 after the title, the strategy copied, connected from the
+	// node and in its frame.
+	m = press(t, m, "y", "o", "j", "j", "j", "<enter>")
+	seq := m.b.At(3, 0)
+	if seq == nil || seq.Title != "設計 #2" {
+		t.Fatalf("sequel %+v; board %v", seq, titles(m.b))
+	}
+	if !m.b.HasEdge(src.ID, seq.ID) {
+		t.Error("no edge from the node to its sequel")
+	}
+	if m.b.GroupOf(seq.ID) != gi {
+		t.Error("the sequel should join the node's frame")
+	}
+	if got := strategyBody(dir, *seq); got != "まず読む" {
+		t.Errorf("sequel's strategy %q", got)
+	}
+	if m.yank != nil || m.yankFrom != "" {
+		t.Error("placing should let the sequel go")
+	}
+
+	// The sequel of a sequel counts on; p places it too.
+	m = press(t, m, "y", "o", "j", "p")
+	if again := m.b.At(4, 0); again == nil || again.Title != "設計 #3" || !m.b.HasEdge(seq.ID, again.ID) {
+		t.Fatalf("second sequel %+v; board %v", again, titles(m.b))
+	}
+
+	// One undo takes the paste and its edge back; Esc gives up a held one.
+	if m = press(t, m, "u"); len(m.b.Nodes) != 3 || len(m.b.Edges) != 2 {
+		t.Errorf("undo left %d nodes, %d edges", len(m.b.Nodes), len(m.b.Edges))
+	}
+	m = press(t, m, "y", "o", "<esc>", "<enter>")
+	if len(m.b.Nodes) != 3 || m.yankFrom != "" {
+		t.Errorf("esc should give the sequel up: %v", titles(m.b))
+	}
+}
+
+func TestSequelTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"設計":     "設計 #2",
+		"設計 #2":  "設計 #3",
+		"設計 #9":  "設計 #10",
+		"設計 #タグ": "設計 #タグ #2", // not a round number
+		"設計 #1":  "設計 #1 #2",
+		"設計 #+3": "設計 #+3 #2",
+		"設計 #":   "設計 # #2",
+		"":       " #2",
+	} {
+		if got := sequelTitle(in); got != want {
+			t.Errorf("sequelTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTruncTitleKeepsTheRound(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		w    int
+		want string
+	}{
+		{"スキーマ設計 #2", 20, "スキーマ設計 #2"},    // fits as is
+		{"スキーマ設計と移行 #12", 12, "スキー… #12"}, // the number stays
+		{"スキーマ設計と移行", 8, "スキー…"},          // no number: cut as usual
+		{"設計 #3", 3, "設…"},                // too narrow for the number
+	} {
+		if got := truncTitle(c.in, c.w); got != c.want {
+			t.Errorf("truncTitle(%q, %d) = %q, want %q", c.in, c.w, got, c.want)
+		}
+	}
+}
+
 func TestDeleteSessionBreak(t *testing.T) {
 	m := New(t.TempDir(), &board.Board{})
 	m = press(t, m, "a", "A", "<enter>", "o", "B", "<enter>", "o", "C", "<enter>", "g", "g")

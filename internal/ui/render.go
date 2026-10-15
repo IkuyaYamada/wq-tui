@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -412,7 +413,25 @@ func titleRows(title string, w int) []string {
 		rows = append(rows, head)
 		rest = rest[len(head):]
 	}
-	return append(rows, runewidth.Truncate(rest, w, "…"))
+	return append(rows, truncTitle(rest, w))
+}
+
+// truncTitle cuts a title to width w with "…", as runewidth.Truncate does,
+// but keeps a sequel's round number ("… #2") in view at the end.
+func truncTitle(title string, w int) string {
+	if runewidth.StringWidth(title) <= w {
+		return title
+	}
+	head, k := sequelRound(title)
+	if k == 1 {
+		return runewidth.Truncate(title, w, "…")
+	}
+	mark := " #" + strconv.Itoa(k)
+	room := w - runewidth.StringWidth(mark)
+	if room < 2 { // too narrow to keep anything of the title
+		return runewidth.Truncate(title, w, "…")
+	}
+	return runewidth.Truncate(head, room, "…") + mark
 }
 
 // nodeMarks are the signs at a card's top right: ↻ it has an agent
@@ -467,7 +486,7 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 	// A completion comment takes the second line, so the card (and the
 	// grid) keeps its size; the title gives up its second line for it.
 	if n.Done && n.DoneNote != "" {
-		cv.text(x+2, y+1, runewidth.Truncate(label, w-4, "…"), title)
+		cv.text(x+2, y+1, truncTitle(label, w-4), title)
 		cv.text(x+2, y+2, runewidth.Truncate(n.DoneNote, w-4, "…"), stDoneNote)
 		return
 	}
@@ -1014,6 +1033,6 @@ func drawCompactEmpty(cv *canvas, l layout, row, col int, title string, st style
 		cv.set(x+i, y, '╌', st)
 	}
 	if title != "" {
-		cv.text(x+1, y, " "+runewidth.Truncate(title, max(w-4, 1), "…")+" ", stPreviewDim)
+		cv.text(x+1, y, " "+truncTitle(title, max(w-4, 1))+" ", stPreviewDim)
 	}
 }

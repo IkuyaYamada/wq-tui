@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,6 +71,9 @@ type Model struct {
 	// copy; Esc lets it go.
 	yank         *board.Node
 	yankStrategy string
+	// yankFrom is the node yo copied: the paste goes on as its sequel,
+	// connected from it and in its frame. Empty after yy.
+	yankFrom string
 
 	// Visual mode selects the rectangle between visAnchor and the cursor,
 	// or whole rows when visLine is set.
@@ -666,6 +670,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		switch key {
 		case "y":
 			m.yankNode()
+		case "o":
+			m.yankSequel()
 		case "p":
 			m.yankPath()
 		}
@@ -767,6 +773,10 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		m.inputDone = true
 		return m.startInput("done> ", "")
 	case "enter":
+		if m.yankFrom != "" && m.yank != nil {
+			m.paste() // yo places its sequel with Enter as well as p
+			return nil
+		}
 		if n == nil {
 			return nil
 		}
@@ -820,7 +830,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 	case "p":
 		m.paste()
 	case "esc":
-		m.yank = nil
+		m.yank, m.yankFrom = nil, ""
 	case "x":
 		if n == nil {
 			return nil
@@ -1122,8 +1132,43 @@ func (m *Model) yankNode() {
 		return
 	}
 	y := board.Node{Title: n.Title, URL: n.URL}
-	m.yank, m.yankStrategy = &y, strategyBody(m.dir, *n)
+	m.yank, m.yankStrategy, m.yankFrom = &y, strategyBody(m.dir, *n), ""
 	m.msg = "yanked: " + n.Title
+}
+
+// sequelTitle numbers the sequel of a node whose work ran long, counting
+// the node itself as the first round: "title #2", then "title #3" for the
+// sequel of that one, so a long run shows. Cards keep the number in view
+// when they cut the title short (truncTitle).
+func sequelTitle(title string) string {
+	head, k := sequelRound(title)
+	return head + " #" + strconv.Itoa(k+1)
+}
+
+// sequelRound splits a title into what comes before a trailing " #k" and
+// k, the round it is in; a title without one is round 1.
+func sequelRound(title string) (head string, k int) {
+	if i := strings.LastIndex(title, " #"); i >= 0 {
+		if k, err := strconv.Atoi(title[i+2:]); err == nil && k > 1 && title[i+2] != '+' {
+			return title[:i], k
+		}
+	}
+	return title, 1
+}
+
+// yankSequel copies the node under the cursor as its sequel, for when its
+// work stops for now and picks up again further down: the ghost follows
+// the cursor as for yy, and Enter or p places the copy, numbered by
+// sequelTitle, connected from the node and in its frame.
+func (m *Model) yankSequel() {
+	n := m.selected()
+	if n == nil {
+		return
+	}
+	m.yankNode()
+	m.yank.Title = sequelTitle(m.yank.Title)
+	m.yankFrom = n.ID
+	m.msg = "sequel of " + n.Title + ": Enter / p places it, Esc gives up"
 }
 
 // pasteCell is where p would put the copy: the empty cell nearest the
@@ -1146,9 +1191,18 @@ func (m *Model) paste() {
 	if cur := m.selected(); cur != nil {
 		group = m.b.GroupOf(cur.ID)
 	}
+	from := m.b.Node(m.yankFrom)
+	if from != nil {
+		group = m.b.GroupOf(from.ID) // a sequel stays with its node, wherever it goes
+	}
 	m.b.Add(nn, m.row, m.col)
-	if group >= 0 {
+	if group >= 0 && m.b.GroupOf(nn.ID) < 0 {
 		m.b.Groups[group].Members = append(m.b.Groups[group].Members, nn.ID)
+	}
+	if from != nil {
+		// On the node's own row the edge opens a row and the sequel goes
+		// down into it; placed above, the edge points up to the node.
+		_, _ = m.b.ToggleEdge(from.ID, nn.ID)
 	}
 	m.cursorTo(m.b.Node(nn.ID))
 	m.save()
@@ -1157,7 +1211,7 @@ func (m *Model) paste() {
 			m.msg = "strategy: " + err.Error()
 		}
 	}
-	m.yank, m.yankStrategy = nil, "" // one paste per yank
+	m.yank, m.yankStrategy, m.yankFrom = nil, "", "" // one paste per yank
 }
 
 // keyMove slides the moving nodes as one block; the cursor rides along.
@@ -1426,7 +1480,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · s fast: node to node · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · s fast: node to node · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yo sequel: copy as #2, connected (⏎/p places) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",

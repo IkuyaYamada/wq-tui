@@ -183,7 +183,7 @@ func (m *Model) breadcrumb(room int) string {
 		}
 		frame = runewidth.Truncate(frame, frameW, "…")
 	}
-	node = runewidth.Truncate(node, max(nodeW, 0), "…")
+	node = truncTitle(node, max(nodeW, 0))
 	out := "  "
 	if frame != "" {
 		out += frameSt.Render(frame)
