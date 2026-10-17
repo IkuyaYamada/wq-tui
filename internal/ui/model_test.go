@@ -450,17 +450,36 @@ func TestStartsOnFirstOpenNode(t *testing.T) {
 }
 
 func TestGXOpensNodeURL(t *testing.T) {
-	m := New(t.TempDir(), &board.Board{})
+	dir := t.TempDir()
+	m := New(dir, &board.Board{})
 	var opened []string
 	m.openURL = func(u string) error { opened = append(opened, u); return nil }
 	m = press(t, m, "a", "設計", "<enter>", "g", "x")
-	if len(opened) != 0 || !strings.Contains(m.msg, "no url") {
-		t.Errorf("without url: opened %v msg %q", opened, m.msg)
+	if m.mode != modeInput || m.input.Prompt != "url> " {
+		t.Fatalf("gx without a url should ask: mode %v prompt %q", m.mode, m.input.Prompt)
 	}
-	m.b.Nodes[0].URL = "https://example.com/doc"
-	m = press(t, m, "g", "x")
+	// Esc gives up without touching the node.
+	m = press(t, m, "example.com/doc", "<esc>")
+	if m.selected().URL != "" || len(opened) != 0 {
+		t.Fatalf("esc kept %q, opened %v", m.selected().URL, opened)
+	}
+	// Enter keeps it, in the header too, and opens it.
+	m = press(t, m, "g", "x", " https://example.com/doc ", "<enter>")
+	if got := m.selected().URL; got != "https://example.com/doc" {
+		t.Fatalf("url %q, msg %q", got, m.msg)
+	}
+	if h, _ := readStrategyHeader(filepath.Join(board.NodeDir(dir, m.selected().ID), "strategy.md")); h.url != "https://example.com/doc" {
+		t.Errorf("header url %q", h.url)
+	}
 	if len(opened) != 1 || opened[0] != "https://example.com/doc" {
 		t.Errorf("opened %v", opened)
+	}
+	m = press(t, m, "g", "x")
+	if len(opened) != 2 {
+		t.Errorf("gx with a url should open it: opened %v", opened)
+	}
+	if m = press(t, m, "u"); m.selected().URL != "" {
+		t.Errorf("undo should take the url back")
 	}
 	// gg still goes to the only (open) node; a lone g then another key does nothing.
 	m = press(t, m, "j", "l", "g", "g")

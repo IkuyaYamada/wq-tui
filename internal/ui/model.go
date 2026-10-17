@@ -59,6 +59,7 @@ type Model struct {
 	searchOrig   [2]int // cursor when the search began; Esc goes back there
 	searchQuery  string // the last search, for n / N
 	inputSession bool   // the prompt asks for the node's agent session (gr without one)
+	inputURL     bool   // the prompt asks for the node's url (gx without one)
 	fastOrig     [2]int // cursor when FAST mode began; Esc goes back there
 	frameIDs     []string
 	prevCur      [2]int // cursor to restore when a new node is discarded
@@ -479,12 +480,18 @@ func (m *Model) refreshRoutes() {
 }
 
 // openNodeURL opens the url of the node under the cursor in the browser.
-func (m *Model) openNodeURL() {
+// On a node without one it asks for it (url> ).
+func (m *Model) openNodeURL() tea.Cmd {
 	n := m.selected()
 	switch {
 	case n == nil:
 	case n.URL == "":
-		m.msg = "no url — add one to url: in the strategy header"
+		if m.stale {
+			m.msg = staleMsg
+			return nil
+		}
+		m.inputURL = true
+		return m.startInput("url> ", "")
 	default:
 		if err := m.openURL(n.URL); err != nil {
 			m.msg = "open: " + err.Error()
@@ -492,6 +499,37 @@ func (m *Model) openNodeURL() {
 			m.msg = "opened " + n.URL
 		}
 	}
+	return nil
+}
+
+// keyURL handles a key on the prompt asking for the node's url. Enter keeps
+// it, in board.json and the strategy header, then opens it as gx does; Esc
+// gives up.
+func (m *Model) keyURL(k tea.KeyMsg) tea.Cmd {
+	switch k.String() {
+	case "enter", "esc", "ctrl+c":
+		m.input.Blur()
+		m.mode = modeNormal
+		m.inputURL = false
+		m.toASCII()
+		url := strings.TrimSpace(m.input.Value())
+		n := m.selected()
+		if k.String() != "enter" || url == "" || n == nil {
+			return nil
+		}
+		m.checkpoint()
+		n = m.selected()
+		n.URL = url
+		m.save()
+		if _, err := strategyPath(m.dir, *n); err != nil {
+			m.msg = "strategy: " + err.Error()
+			return nil
+		}
+		return m.openNodeURL()
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(k)
+	return cmd
 }
 
 // yankPath puts the absolute path of the strategy.md under the cursor (the
@@ -657,7 +695,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 			m.row, m.col = 0, 0
 			m.cursorTo(firstOpen(m.b))
 		case "x":
-			m.openNodeURL()
+			return m.openNodeURL()
 		case "r", "R":
 			return m.resumeSession(key == "R")
 		case "s":
@@ -1009,6 +1047,9 @@ func (m *Model) keyInput(k tea.KeyMsg) tea.Cmd {
 	}
 	if m.inputSession {
 		return m.keySession(k)
+	}
+	if m.inputURL {
+		return m.keyURL(k)
 	}
 	if m.inputFrame {
 		switch k.String() {
