@@ -903,10 +903,25 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 // cursor by the same number of rows, like vim's C-d / C-u.
 func (m *Model) halfPage(dir int) {
 	l := m.layout()
-	rows := max(1, m.bodyHeight()/2/(l.cardH+l.lane))
+	// Rows differ in height (wrapped titles, frames, breaks), so count
+	// half a screen in lines, as vim does, not in rows.
+	y := func(r int) int {
+		if last := len(l.rowY) - 1; r > last {
+			return l.rowY[last] + (r-last)*(l.cardH+l.lane)
+		}
+		return l.rowY[r]
+	}
 	before := m.row
-	m.row = max(0, min(m.row+dir*rows, m.lastRow()))
-	m.scroll += l.rowY[min(m.row, len(l.rowY)-1)] - l.rowY[min(before, len(l.rowY)-1)]
+	target := y(before) + dir*max(m.bodyHeight()/2, 1)
+	r := max(0, min(before+dir, m.lastRow())) // at least one row
+	for dir > 0 && r < m.lastRow() && y(r+1) <= target {
+		r++
+	}
+	for dir < 0 && r > 0 && y(r-1) >= target {
+		r--
+	}
+	m.row = r
+	m.scroll = max(0, m.scroll+y(r)-y(before))
 }
 
 // scrollRows scrolls the view by n rows (C-e / C-y) without moving the

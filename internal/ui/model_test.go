@@ -1399,9 +1399,34 @@ func TestBlocksScrollByRows(t *testing.T) {
 	if rows := m.bodyHeight() / 2 / (compactCardH + m.layout().lane); m.row != rows {
 		t.Errorf("C-d should move half a screen of rows (%d), got row %d", rows, m.row)
 	}
+	m = press(t, m, "ctrl+u")
+	if m.row != 0 {
+		t.Errorf("C-u should come back to row 0, got %d", m.row)
+	}
 	m = press(t, m, "G")
 	if !strings.Contains(m.View(), "39") {
 		t.Error("the last row should be on screen")
+	}
+}
+
+func TestHalfPageCountsLinesNotRows(t *testing.T) {
+	// Long titles make every block several lines tall: C-d must still
+	// move about half a screen, not half a screen's worth of short rows.
+	b := &board.Board{}
+	for r := range 40 {
+		b.Nodes = append(b.Nodes, board.Node{ID: fmt.Sprint(r), Title: strings.Repeat("長い題名", 12), Row: r})
+	}
+	m := New(t.TempDir(), b, WithBlocks())
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 22})
+	m = n.(Model)
+	m = press(t, m, "gg", "ctrl+d")
+	l := m.layout()
+	if m.row < 1 || l.rowY[m.row] > m.bodyHeight()/2 {
+		t.Errorf("C-d went to row %d at line %d, past half the screen (%d)", m.row, l.rowY[m.row], m.bodyHeight()/2)
+	}
+	m = press(t, m, "ctrl+u")
+	if m.row != 0 {
+		t.Errorf("C-u should come back to row 0, got %d", m.row)
 	}
 }
 
