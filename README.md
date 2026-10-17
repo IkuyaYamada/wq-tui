@@ -205,7 +205,8 @@ under the cursor.
 ## Maturity meter
 
 A small bar on the left end of a card's bottom border shows how much of its
-strategy is written, read when wq starts, on `R` and when vim closes:
+strategy is written, reread every couple of seconds so edits made outside
+wq (another terminal, an agent) show up too, like the task list's progress:
 
 ```
 ╰▄───────────────╯

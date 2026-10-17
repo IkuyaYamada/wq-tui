@@ -224,7 +224,17 @@ type asciiAgainMsg struct{}
 
 const asciiAgainDelay = 150 * time.Millisecond
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd { return statsTick() }
+
+// statsTickMsg rereads every strategy's stats, so a card's progress and
+// meter follow edits made outside this wq: another terminal, an agent.
+type statsTickMsg struct{}
+
+const statsInterval = 2 * time.Second
+
+func statsTick() tea.Cmd {
+	return tea.Tick(statsInterval, func(time.Time) tea.Msg { return statsTickMsg{} })
+}
 
 func (m *Model) checkpoint() {
 	m.undo = append(m.undo, m.b.Clone())
@@ -379,6 +389,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode != modeInput && m.mode != modeEdit {
 			m.toASCII()
 		}
+		m.stats = readAllStats(m.dir, m.b)
+	case statsTickMsg:
+		m.stats = readAllStats(m.dir, m.b)
+		cmd = statsTick()
 	case asciiAgainMsg:
 		if m.mode != modeInput {
 			if prev := m.ime.ASCII(); prev != "" {
@@ -387,6 +401,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case sessionDoneMsg:
 		m.sessionDone(msg)
+		m.stats = readAllStats(m.dir, m.b) // the agent may have written any strategy
 		m.toASCII()
 	case editorDoneMsg:
 		if msg.err != nil {

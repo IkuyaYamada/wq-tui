@@ -197,3 +197,23 @@ func TestChecksOnCards(t *testing.T) {
 		t.Errorf("c has no task list and no label")
 	}
 }
+
+func TestStatsFollowOutsideEdits(t *testing.T) {
+	dir := t.TempDir()
+	b := &board.Board{Nodes: []board.Node{{ID: "a", Title: "設計"}}}
+	nodeDir := board.NodeDir(dir, "a")
+	os.MkdirAll(nodeDir, 0o755)
+	m := New(dir, b)
+	if got := m.stats["a"].checks; got != 0 {
+		t.Fatalf("checks %d before any strategy", got)
+	}
+	// Written by another terminal or an agent, not by this wq's vim.
+	os.WriteFile(filepath.Join(nodeDir, "strategy.md"), []byte("# 手順\n- [ ] 下書き\n- [x] 見直し\n"), 0o644)
+	for _, msg := range []tea.Msg{statsTickMsg{}, tea.FocusMsg{}, sessionDoneMsg{id: "a"}} {
+		m.stats = map[string]nodeStats{}
+		n, _ := m.Update(msg)
+		if got := n.(Model).stats["a"]; got.checks != 2 || got.checked != 1 {
+			t.Errorf("after %T: stats %+v, want 1/2", msg, got)
+		}
+	}
+}
