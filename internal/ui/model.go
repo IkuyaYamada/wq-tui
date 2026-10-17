@@ -1158,8 +1158,8 @@ func sequelRound(title string) (head string, k int) {
 
 // yankSequel copies the node under the cursor as its sequel, for when its
 // work stops for now and picks up again further down: the ghost follows
-// the cursor as for yy, and Enter or p places the copy, numbered by
-// sequelTitle, connected from the node and in its frame.
+// the cursor, and Enter or p places the copy where sequelCell says,
+// numbered by sequelTitle, connected from the node and in its frame.
 func (m *Model) yankSequel() {
 	n := m.selected()
 	if n == nil {
@@ -1174,6 +1174,21 @@ func (m *Model) yankSequel() {
 // pasteCell is where p would put the copy: the empty cell nearest the
 // cursor, as for a.
 func (m *Model) pasteCell() (row, col int) { return m.b.NearestEmpty(m.row, m.col) }
+
+// sequelCell is where Enter or p would put the sequel yo holds: the
+// cursor's cell when it is empty, else the cell under the cursor's node.
+// opens says that cell is taken, so a row is to be opened under the
+// node's row for it (as o does).
+func (m *Model) sequelCell() (row, col int, opens bool) {
+	cur := m.selected()
+	if cur == nil {
+		return m.row, m.col, false
+	}
+	if m.b.FreeBelow(cur.ID, cur.ID == m.yankFrom) {
+		return cur.Row + 1, cur.Col, false
+	}
+	return cur.Row, cur.Col, true
+}
 
 // paste puts a copy of the yanked node where the ghost shows and moves the
 // cursor onto it, as vim's p does. It starts open, with its own empty
@@ -1192,17 +1207,26 @@ func (m *Model) paste() {
 		group = m.b.GroupOf(cur.ID)
 	}
 	from := m.b.Node(m.yankFrom)
-	if from != nil {
-		group = m.b.GroupOf(from.ID) // a sequel stays with its node, wherever it goes
-	}
-	m.b.Add(nn, m.row, m.col)
-	if group >= 0 && m.b.GroupOf(nn.ID) < 0 {
-		m.b.Groups[group].Members = append(m.b.Groups[group].Members, nn.ID)
-	}
-	if from != nil {
+	cur := m.selected()
+	switch {
+	case from == nil:
+		m.b.Add(nn, m.row, m.col)
+	case cur == nil:
+		m.b.Add(nn, m.row, m.col)
 		// On the node's own row the edge opens a row and the sequel goes
 		// down into it; placed above, the edge points up to the node.
 		_, _ = m.b.ToggleEdge(from.ID, nn.ID)
+	case cur.ID == from.ID:
+		_ = m.b.InsertAfter(from.ID, nn) // as o: A → sequel → B
+	default:
+		_ = m.b.PlaceBelow(cur.ID, nn)
+		_, _ = m.b.ToggleEdge(from.ID, nn.ID)
+	}
+	if from != nil {
+		group = m.b.GroupOf(from.ID) // a sequel stays with its node, wherever it goes
+	}
+	if group >= 0 && m.b.GroupOf(nn.ID) < 0 {
+		m.b.Groups[group].Members = append(m.b.Groups[group].Members, nn.ID)
 	}
 	m.cursorTo(m.b.Node(nn.ID))
 	m.save()
@@ -1480,7 +1504,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · s fast: node to node · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yo sequel: copy as #2, connected (⏎/p places) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · s fast: node to node · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yo sequel: copy as #2, connected (⏎/p places it here, or under the node) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",
@@ -1574,8 +1598,13 @@ func (m Model) viewBoard() []string {
 		v.movingBreak = true
 	case modeNormal:
 		if m.yank != nil && m.selectedFrame() == nil {
-			r, c := m.pasteCell()
-			v.ghost = &ghost{row: r, col: c, title: m.yank.Title}
+			if m.yankFrom != "" {
+				r, c, opens := m.sequelCell()
+				v.ghost = &ghost{row: r, col: c, title: m.yank.Title, lane: opens}
+			} else {
+				r, c := m.pasteCell()
+				v.ghost = &ghost{row: r, col: c, title: m.yank.Title}
+			}
 		}
 	}
 	cv := renderBoard(m.b, l, m.routes, v)

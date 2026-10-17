@@ -1224,6 +1224,46 @@ func TestYankSequel(t *testing.T) {
 	}
 }
 
+func TestYankSequelMakesRoomBelow(t *testing.T) {
+	m := New(t.TempDir(), &board.Board{})
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = n.(Model)
+	m = press(t, m, "a", "設計", "<enter>", "o", "実装", "<enter>", "o", "検証", "<enter>")
+	m = press(t, m, "g", "g", "l", "a", "調査", "<enter>", "g", "g")
+	a, b, last := m.b.At(0, 0), m.b.At(1, 0), m.b.At(2, 0)
+
+	// Enter on the node itself does what o does: the row under it is
+	// taken, so one opens, and the sequel takes the node's outgoing edges.
+	m = press(t, m, "y", "o", "<enter>")
+	seq := m.b.At(1, 0)
+	if seq == nil || seq.Title != "設計 #2" || m.b.Node(b.ID).Row != 2 {
+		t.Fatalf("board %v", titles(m.b))
+	}
+	if !m.b.HasEdge(a.ID, seq.ID) || !m.b.HasEdge(seq.ID, b.ID) || m.b.HasEdge(a.ID, b.ID) {
+		t.Errorf("want 設計 → #2 → 実装, got %v", m.b.Edges)
+	}
+
+	// On another node whose cell below is taken, a row opens under that
+	// node; the ghost shows in the gap meanwhile, and only the edge from
+	// the node the sequel continues is drawn.
+	c := m.b.At(0, 1)
+	m = press(t, m, "g", "g", "l", "y", "o", "h", "j", "j")
+	if got := m.selected(); got == nil || got.ID != b.ID {
+		t.Fatalf("setup: cursor on %+v", got)
+	}
+	if v := m.View(); !strings.Contains(v, "╌ 調査 #2 ╌") {
+		t.Fatalf("want the ghost in the gap under the row:\n%s", v)
+	}
+	m = press(t, m, "<enter>")
+	got := m.b.At(3, 0)
+	if got == nil || got.Title != "調査 #2" || m.b.Node(last.ID).Row != 4 {
+		t.Fatalf("board %v", titles(m.b))
+	}
+	if !m.b.HasEdge(c.ID, got.ID) || len(m.b.Succs(got.ID)) != 0 || len(m.b.Preds(got.ID)) != 1 {
+		t.Errorf("edges %v", m.b.Edges)
+	}
+}
+
 func TestSequelTitle(t *testing.T) {
 	for in, want := range map[string]string{
 		"設計":     "設計 #2",

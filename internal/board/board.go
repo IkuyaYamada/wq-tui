@@ -188,7 +188,7 @@ func (b *Board) InsertAfter(id string, n Node) error {
 		return ErrNotFound
 	}
 	row, col := a.Row, a.Col
-	if _, brk := b.BreakAfter(row); brk || !b.roomBelow(id, row, col) {
+	if !b.FreeBelow(id, true) {
 		b.OpenRowBelow(row)
 	}
 	n.Row, n.Col = row+1, col
@@ -199,6 +199,40 @@ func (b *Board) InsertAfter(id string, n Node) error {
 	}
 	b.Nodes = append(b.Nodes, n)
 	b.Edges = append(b.Edges, Edge{From: id, To: n.ID})
+	return nil
+}
+
+// FreeBelow reports whether a node can go in the cell under id without
+// opening a row: the cell is free and no break lies under id's row. With
+// handOver the node is to take id's outgoing edges as well, so every
+// successor must sit lower still.
+func (b *Board) FreeBelow(id string, handOver bool) bool {
+	a := b.Node(id)
+	if a == nil {
+		return false
+	}
+	if _, brk := b.BreakAfter(a.Row); brk {
+		return false
+	}
+	if handOver {
+		return b.roomBelow(id, a.Row, a.Col)
+	}
+	return b.At(a.Row+1, a.Col) == nil
+}
+
+// PlaceBelow places n directly below id, opening an empty row below id
+// first when the cell is taken, as InsertAfter does, but leaves the edges
+// alone.
+func (b *Board) PlaceBelow(id string, n Node) error {
+	a := b.Node(id)
+	if a == nil {
+		return ErrNotFound
+	}
+	if !b.FreeBelow(id, false) {
+		b.OpenRowBelow(a.Row)
+	}
+	n.Row, n.Col = a.Row+1, a.Col
+	b.Nodes = append(b.Nodes, n)
 	return nil
 }
 

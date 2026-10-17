@@ -715,10 +715,13 @@ type view struct {
 	ghost                *ghost // where p would paste the yanked node
 }
 
-// ghost is a not-yet-pasted copy, drawn dashed and dim in an empty cell.
+// ghost is a not-yet-pasted copy, drawn dashed and dim in an empty cell,
+// or with lane set, as one dashed line in the gap under row: the row that
+// would open there for it.
 type ghost struct {
 	row, col int
 	title    string
+	lane     bool
 }
 
 // renderBoard draws every card, the cursor and the routed edges.
@@ -785,7 +788,8 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 			drawFrame(cv, l, v.cursorRow, v.cursorCol, frameDashed, v.cursorSt)
 		}
 	}
-	if g := v.ghost; g != nil && g.row >= 0 && g.row < len(l.rowY) {
+	// A ghost in the gap under a row is drawn last, over the edges there.
+	if g := v.ghost; g != nil && !g.lane && g.row >= 0 && g.row < len(l.rowY) {
 		border := stBorderMove
 		if g.row == v.cursorRow && g.col == v.cursorCol {
 			border = v.cursorSt
@@ -912,6 +916,9 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 			cv.set(a.p.x, a.p.y, '▼', a.st)
 		}
 	}
+	if g := v.ghost; g != nil && g.lane && g.row >= 0 && g.row < len(l.rowY) {
+		drawDashedTitle(cv, l.colX(g.col), l.rowY[g.row]+l.h(g.row), l.cardW, g.title, stBorderMove)
+	}
 	return cv
 }
 
@@ -1028,7 +1035,12 @@ func drawEmptyRow(cv *canvas, l layout, r int) {
 // drawCompactEmpty marks an empty cell as a dashed line: the cursor, or
 // with a title, the ghost of a yanked node.
 func drawCompactEmpty(cv *canvas, l layout, row, col int, title string, st style) {
-	x, y, w := l.colX(col), l.rowY[row], l.cardW
+	drawDashedTitle(cv, l.colX(col), l.rowY[row], l.cardW, title, st)
+}
+
+// drawDashedTitle draws a dashed line w wide at x, y, with title dimmed on
+// it when there is one.
+func drawDashedTitle(cv *canvas, x, y, w int, title string, st style) {
 	for i := 0; i < w; i++ {
 		cv.set(x+i, y, '╌', st)
 	}
