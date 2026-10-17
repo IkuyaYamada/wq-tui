@@ -984,12 +984,29 @@ func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats)
 		cv.text(x+1, y+len(rows), note, stCardNote)
 	}
 	if rw > 0 {
+		at := -1
 		for i, line := range rows {
 			if runewidth.StringWidth(line)+1+rw <= w-2 {
-				cv.text(x+w-1-rw, y+i, right, rst)
+				at = i
 				break
 			}
 		}
+		used := len(rows)
+		if note != "" {
+			used++
+		}
+		switch {
+		case at >= 0:
+		case used < h: // a taller block beside it left a line free
+			at = used
+		default: // every line is full: the last one gives up its end
+			at = len(rows) - 1
+			for i := x + w - 2 - rw; i < x+w-1; i++ {
+				cv.set(i, y+at, ' ', fill)
+			}
+			cv.text(x+1, y+at, runewidth.Truncate(rows[at], w-3-rw, "…"), st)
+		}
+		cv.text(x+w-1-rw, y+at, right, rst)
 	}
 }
 

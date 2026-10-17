@@ -217,3 +217,18 @@ func TestStatsFollowOutsideEdits(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockShowsProgressWhenTitleFillsEveryLine(t *testing.T) {
+	dir := t.TempDir()
+	// A title that fills each of its lines to the last cell.
+	w := makeLayout(&board.Board{}, 120, densityBlocks).cardW - 2
+	b := &board.Board{Nodes: []board.Node{{ID: "a", Title: strings.Repeat("a", 3*w)}}}
+	nodeDir := board.NodeDir(dir, "a")
+	os.MkdirAll(nodeDir, 0o755)
+	os.WriteFile(filepath.Join(nodeDir, "strategy.md"), []byte("- [ ] 一\n- [ ] 二\n- [ ] 三\n"), 0o644)
+	m := New(dir, b, WithBlocks())
+	n, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	if v := n.(Model).View(); !strings.Contains(v, "0/3") {
+		t.Errorf("a block whose title fills every line lost its progress:\n%s", v)
+	}
+}

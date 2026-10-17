@@ -90,7 +90,8 @@ A block is shaded, in a shade that follows a light or dark terminal; the
 cursor, a selection and a connect target colour the whole block. A done
 block reads `✓` and is struck through, its completion comment on the line
 after the title; the task list's progress and `↗` sit at the right end of
-the first line with room for them. Edges start right under a block and end
+the first line with room for them; when the title fills every line, the
+last one is cut short (`…`) to make that room. Edges start right under a block and end
 in `▼` just above the target. Frames, necks and session breaks are drawn as on the full
 board. Left out: the maturity meter (`K` shows it).
 
