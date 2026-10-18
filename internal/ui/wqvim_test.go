@@ -8,7 +8,7 @@ import (
 )
 
 // TestNodeVimScript drives wq.vim in a headless vim: the strategy alone on
-// screen, and q saving it.
+// screen, and ZZ saving it.
 func TestNodeVimScript(t *testing.T) {
 	if _, err := exec.LookPath("vim"); err != nil {
 		t.Skip("vim not installed")
@@ -24,7 +24,7 @@ func TestNodeVimScript(t *testing.T) {
 echo "wins=" . winnr("$")
 redir END
 call setline(6, "追記")
-normal q
+normal ZZ
 `), 0o644)
 	if b, err := exec.Command("vim", "-N", "-u", "NONE", "-es", "-S", script, "-S", check, strategy).CombinedOutput(); err != nil {
 		t.Fatalf("vim: %v\n%s", err, b)
@@ -33,7 +33,7 @@ normal q
 		t.Errorf("one window, the strategy: %q", got)
 	}
 	if body, _ := os.ReadFile(strategy); string(body) != "---\ntitle: 設計\n---\n\n方針\n追記\n" {
-		t.Errorf("q should save the strategy: %q", body)
+		t.Errorf("ZZ should save the strategy: %q", body)
 	}
 }
 
