@@ -86,7 +86,8 @@ on Linux); a "compact" saved by an older wq starts as blocks.
  リリース
 ```
 
-A block is shaded, in a shade that follows a light or dark terminal; the
+A block is shaded, in a shade that follows a light or dark terminal (also
+inside tmux; a theme switched while wq runs shows from the next start); the
 cursor, a selection and a connect target colour the whole block. A done
 block reads `✓` and is struck through, its completion comment on the line
 after the title; the task list's progress and `↗` sit at the right end of

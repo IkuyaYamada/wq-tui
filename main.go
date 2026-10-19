@@ -57,7 +57,11 @@ func main() {
 	out := ui.CaretOutput{File: os.Stdout, C: caret}
 	// Ask the terminal whether its background is dark now, before the
 	// program reads keys: the answer would otherwise arrive as input.
-	lipgloss.SetHasDarkBackground(lipgloss.HasDarkBackground())
+	dark, ok := tmuxBackgroundIsDark()
+	if !ok {
+		dark = lipgloss.HasDarkBackground()
+	}
+	lipgloss.SetHasDarkBackground(dark)
 	if _, err := tea.NewProgram(ui.New(dir, b, opts...), tea.WithAltScreen(), tea.WithOutput(out), tea.WithReportFocus()).Run(); err != nil {
 		fail(err)
 	}
