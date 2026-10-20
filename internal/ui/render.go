@@ -417,12 +417,13 @@ func titleRows(title string, w int) []string {
 }
 
 // truncTitle cuts a title to width w with "…", as runewidth.Truncate does,
-// but keeps a sequel's round number ("… #2") in view at the end.
+// but keeps a sequel's round number ("… #2") in view at the end, moved
+// there from mid-title when words follow it.
 func truncTitle(title string, w int) string {
 	if runewidth.StringWidth(title) <= w {
 		return title
 	}
-	head, k := sequelRound(title)
+	i, _, k := sequelRound(title)
 	if k == 1 {
 		return runewidth.Truncate(title, w, "…")
 	}
@@ -431,7 +432,7 @@ func truncTitle(title string, w int) string {
 	if room < 2 { // too narrow to keep anything of the title
 		return runewidth.Truncate(title, w, "…")
 	}
-	return runewidth.Truncate(head, room, "…") + mark
+	return runewidth.Truncate(title[:i], room, "…") + mark
 }
 
 // nodeMarks are the signs at a card's top right: ↻ it has an agent

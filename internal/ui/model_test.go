@@ -1285,14 +1285,18 @@ func TestYankSequelMakesRoomBelow(t *testing.T) {
 
 func TestSequelTitle(t *testing.T) {
 	for in, want := range map[string]string{
-		"設計":     "設計 #2",
-		"設計 #2":  "設計 #3",
-		"設計 #9":  "設計 #10",
-		"設計 #タグ": "設計 #タグ #2", // not a round number
-		"設計 #1":  "設計 #1 #2",
-		"設計 #+3": "設計 #+3 #2",
-		"設計 #":   "設計 # #2",
-		"":       " #2",
+		"設計":          "設計 #2",
+		"設計 #2":       "設計 #3",
+		"設計 #9":       "設計 #10",
+		"設計 #タグ":      "設計 #タグ #2", // not a round number
+		"設計 #1":       "設計 #1 #2",
+		"設計 #+3":      "設計 #+3 #2",
+		"設計 #":        "設計 # #2",
+		"":            " #2",
+		"設計 #2 続編":    "設計 #3 続編", // the round counts up where it stands
+		"設計 #2 続編 #4": "設計 #2 続編 #5",
+		"設計 #2 #タグ":   "設計 #3 #タグ",
+		"設計 #タグ 続編":   "設計 #タグ 続編 #2",
 	} {
 		if got := sequelTitle(in); got != want {
 			t.Errorf("sequelTitle(%q) = %q, want %q", in, got, want)
@@ -1306,10 +1310,12 @@ func TestTruncTitleKeepsTheRound(t *testing.T) {
 		w    int
 		want string
 	}{
-		{"スキーマ設計 #2", 20, "スキーマ設計 #2"},    // fits as is
-		{"スキーマ設計と移行 #12", 12, "スキー… #12"}, // the number stays
-		{"スキーマ設計と移行", 8, "スキー…"},          // no number: cut as usual
-		{"設計 #3", 3, "設…"},                // too narrow for the number
+		{"スキーマ設計 #2", 20, "スキーマ設計 #2"},       // fits as is
+		{"スキーマ設計と移行 #12", 12, "スキー… #12"},    // the number stays
+		{"スキーマ設計と移行", 8, "スキー…"},             // no number: cut as usual
+		{"設計 #3", 3, "設…"},                   // too narrow for the number
+		{"スキーマ設計 #3 続編", 30, "スキーマ設計 #3 続編"}, // fits: all of it
+		{"スキーマ設計と移行 #3 続編", 12, "スキーマ… #3"},  // the mid-title number moves to the end
 	} {
 		if got := truncTitle(c.in, c.w); got != c.want {
 			t.Errorf("truncTitle(%q, %d) = %q, want %q", c.in, c.w, got, c.want)

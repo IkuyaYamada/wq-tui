@@ -1209,22 +1209,36 @@ func (m *Model) yankNode() {
 
 // sequelTitle numbers the sequel of a node whose work ran long, counting
 // the node itself as the first round: "title #2", then "title #3" for the
-// sequel of that one, so a long run shows. Cards keep the number in view
-// when they cut the title short (truncTitle).
+// sequel of that one, so a long run shows. A round number with words after
+// it counts up where it stands ("title #2 続編" → "title #3 続編"). Cards
+// keep a trailing number in view when they cut the title short
+// (truncTitle).
 func sequelTitle(title string) string {
-	head, k := sequelRound(title)
-	return head + " #" + strconv.Itoa(k+1)
+	i, num, k := sequelRound(title)
+	if k == 1 {
+		return title + " #2"
+	}
+	return title[:i] + " #" + strconv.Itoa(k+1) + title[i+2+len(num):]
 }
 
-// sequelRound splits a title into what comes before a trailing " #k" and
-// k, the round it is in; a title without one is round 1.
-func sequelRound(title string) (head string, k int) {
-	if i := strings.LastIndex(title, " #"); i >= 0 {
-		if k, err := strconv.Atoi(title[i+2:]); err == nil && k > 1 && title[i+2] != '+' {
-			return title[:i], k
+// sequelRound finds the last " #k" in a title that is a round number, with
+// the end of the title or a space after it: i where it starts, the digits,
+// and k. A title without one is round 1.
+func sequelRound(title string) (i int, num string, k int) {
+	for end := len(title); ; {
+		i = strings.LastIndex(title[:end], " #")
+		if i < 0 {
+			return -1, "", 1
 		}
+		num = title[i+2:]
+		if j := strings.IndexByte(num, ' '); j >= 0 {
+			num = num[:j]
+		}
+		if k, err := strconv.Atoi(num); err == nil && k > 1 && num[0] != '+' {
+			return i, num, k
+		}
+		end = i
 	}
-	return title, 1
 }
 
 // yankSequel copies the node under the cursor as its sequel, for when its
