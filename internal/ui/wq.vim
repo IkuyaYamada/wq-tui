@@ -1,51 +1,117 @@
 " wq.vim — sourced by wq when a node opens its strategy.md, full screen.
 "
 " ZZ (or :wq) saves and returns to wq. q is left alone: a stray q, say at
-" a hit-enter prompt, used to throw you out of vim. C-j / C-k save too and
-" open the next / previous node in focus (F on the board), going round;
-" a node opened from outside it joins the round until you are back on the
-" board. ZF puts this node in focus or takes it out.
+" a hit-enter prompt, used to throw you out of vim. C-j / C-k save and
+" open the next / previous node in focus (F on the board), going round,
+" without leaving vim; a node opened from outside focus is in the round
+" too, in front. ZF puts the node in focus or takes it out; the board
+" catches up once vim ends, the round here stays as it began.
 "
-" wq tells this script, through the environment: WQ_FOCUS, the node's
-" place in focus (0 when out of it); WQ_FOCUS_OTHERS, how many other
-" nodes C-j / C-k can go to; WQ_FOCUS_FILE, where ZF leaves its answer
-" (1 in focus, 0 out) for wq to pick up when vim ends.
+" wq passes, through the environment: WQ_START, the id of the node vim
+" opens on; WQ_FOCUS, its place in focus (0 when out of it); WQ_ROUND, a
+" file of the round, one "id<Tab>place<Tab>path" a line; WQ_RESULT, a file
+" to leave what happened in, for wq to read once vim ends (see
+" readVimResult in editor.go).
 
-let s:focus = str2nr($WQ_FOCUS)
-let s:on = s:focus > 0
-let s:others = str2nr($WQ_FOCUS_OTHERS)
+set hidden " a node left with C-j keeps its undo history
+
+let s:round = []
+if $WQ_ROUND !=# '' && filereadable($WQ_ROUND)
+  for s:line in readfile($WQ_ROUND)
+    let s:f = split(s:line, "\t", 1)
+    if len(s:f) >= 3
+      call add(s:round, {'id': s:f[0], 'place': str2nr(s:f[1]), 'path': fnamemodify(join(s:f[2:], "\t"), ':p')})
+    endif
+  endfor
+endif
+
+let s:cur = $WQ_START
+let s:place = {s:cur : str2nr($WQ_FOCUS)} " id -> place in focus, 0 out, -1 in at an unknown place
+let s:paths = {fnamemodify(expand('%'), ':p') : s:cur}
+for s:e in s:round
+  let s:place[s:e.id] = s:e.place
+  let s:paths[s:e.path] = s:e.id
+endfor
+let s:visited = [s:cur]
+let s:changes = [] " [id, on] in the order ZF was pressed
+
+function! s:At() abort
+  for i in range(len(s:round))
+    if s:round[i].id ==# s:cur
+      return i
+    endif
+  endfor
+  return -1
+endfunction
 
 function! WqFocusLabel() abort
-  if !s:on
+  let p = get(s:place, s:cur, 0)
+  if p == 0
     return ''
   endif
   " The same ①, ②, … the board shows.
-  return s:focus > 0 && s:focus <= 20 ? 'focus ' . nr2char(0x2460 + s:focus - 1) . ' · ' : 'focus · '
+  return p > 0 && p <= 20 ? 'focus ' . nr2char(0x2460 + p - 1) . ' · ' : 'focus · '
 endfunction
 
-" The exit codes tell wq which way to go; keep them in step with editor.go.
-function! s:Step(code) abort
-  if s:others == 0
+function! s:Status() abort
+  let &l:statusline = ' strategy%m%=%{WqFocusLabel()}C-j/C-k next/prev focus · ZF focus on/off · ZZ save & back '
+endfunction
+
+" Written after every change, so it holds whichever way vim ends.
+function! s:Save() abort
+  if $WQ_RESULT ==# ''
+    return
+  endif
+  let lines = ["last\t" . s:cur]
+  call extend(lines, map(copy(s:visited), '"visit\t" . v:val'))
+  call extend(lines, map(copy(s:changes), '"focus\t" . v:val[0] . "\t" . v:val[1]'))
+  call writefile(lines, $WQ_RESULT)
+endfunction
+
+" A node's strategy coming into view, by C-j / C-k or any other way
+" (C-^, C-o), makes it the current node.
+function! s:Enter() abort
+  let id = get(s:paths, fnamemodify(expand('%'), ':p'), '')
+  if id !=# ''
+    let s:cur = id
+    if index(s:visited, id) < 0
+      call add(s:visited, id)
+    endif
+    call s:Save()
+  endif
+  call s:Status()
+endfunction
+
+function! s:Step(dir) abort
+  let n = len(s:round)
+  let at = s:At()
+  if n - (at >= 0 ? 1 : 0) <= 0
     echo 'no other node in focus — ZF or F on the board adds one'
     return
   endif
+  let next = at < 0 ? (a:dir > 0 ? 0 : n - 1) : (at + a:dir + n) % n
   wall
-  execute 'cquit' a:code
+  execute 'edit' fnameescape(s:round[next].path)
 endfunction
 
 function! s:ToggleFocus() abort
-  if $WQ_FOCUS_FILE ==# ''
-    return
-  endif
-  let s:on = !s:on
-  let s:focus = 0 " its place is only known once wq has it
-  call writefile([s:on ? '1' : '0'], $WQ_FOCUS_FILE)
+  let on = get(s:place, s:cur, 0) == 0
+  let s:place[s:cur] = on ? -1 : 0 " its place is only known once wq has it
+  call filter(s:changes, 'v:val[0] !=# s:cur')
+  call add(s:changes, [s:cur, on ? 1 : 0])
+  call s:Save()
   redrawstatus
-  echo s:on ? 'in focus' : 'out of focus'
+  echo on ? 'in focus' : 'out of focus'
 endfunction
 
+augroup wq
+  autocmd!
+  autocmd BufEnter * call s:Enter()
+augroup END
+
 nnoremap <silent> ZZ :wqa<CR>
-nnoremap <silent> <C-j> :call <SID>Step(3)<CR>
-nnoremap <silent> <C-k> :call <SID>Step(4)<CR>
+nnoremap <silent> <C-j> :call <SID>Step(1)<CR>
+nnoremap <silent> <C-k> :call <SID>Step(-1)<CR>
 nnoremap <silent> ZF :call <SID>ToggleFocus()<CR>
-setlocal statusline=\ strategy%m%=%{WqFocusLabel()}C-j/C-k\ next/prev\ focus\ ·\ ZF\ focus\ on/off\ ·\ ZZ\ save\ &\ back\ 
+call s:Status()
+call s:Save()

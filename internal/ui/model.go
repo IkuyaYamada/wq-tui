@@ -93,11 +93,6 @@ type Model struct {
 	connFrom string
 	follow   follow // FOLLOW mode's way so far
 
-	// visiting is a node opened in vim from outside the focus list: C-j /
-	// C-k take it into their round, at the front, until vim hands back to
-	// the board.
-	visiting string
-
 	width, height int
 	scroll        int
 	msg           string
@@ -384,66 +379,50 @@ func (m *Model) toggleFocus() {
 	}
 }
 
-// focusRound is what C-j / C-k go round: the focus list, with the node
-// being visited from outside it in front.
-func (m *Model) focusRound() []string {
-	ids := m.b.Focused()
-	if m.visiting != "" && m.b.Node(m.visiting) != nil && m.b.FocusIndex(m.visiting) < 0 {
-		ids = append([]string{m.visiting}, ids...)
-	}
-	return ids
+// openVim opens node n (or a frame, as a node) in vim. C-j / C-k there
+// go round focus; a node opened from outside it joins the round in front
+// for this session.
+func (m *Model) openVim(n board.Node) tea.Cmd {
+	place, round := m.vimRound(n)
+	return openNode(m.dir, n, place, round)
 }
 
-// openVim opens node n in vim, telling it where it stands in focus. A
-// node outside focus becomes the one being visited.
-func (m *Model) openVim(n board.Node) tea.Cmd {
-	if m.b.Node(n.ID) != nil && m.b.FocusIndex(n.ID) < 0 {
-		m.visiting = n.ID
-	}
-	var f vimFocus
+// vimRound is n's place in focus and the round C-j / C-k go in vim.
+func (m *Model) vimRound(n board.Node) (place int, round []roundNode) {
 	for i, id := range m.b.Focused() {
 		if id == n.ID {
-			f.place = i + 1
+			place = i + 1
 		}
+		round = append(round, roundNode{node: *m.b.Node(id), place: i + 1})
 	}
-	for _, id := range m.focusRound() {
-		if id != n.ID {
-			f.others++
-		}
+	if place == 0 && m.b.Node(n.ID) != nil {
+		round = append([]roundNode{{node: n}}, round...)
 	}
-	return openNode(m.dir, n, f)
+	return place, round
 }
 
-// openNeighbour moves from node id to the next (step 1) or previous (-1)
-// node in the focus round, going round, and opens it in vim. A node off
-// the round (a frame, a node taken out of focus) steps to its first or
-// last. With nowhere else to go it stays on the board.
-func (m *Model) openNeighbour(id string, step int) tea.Cmd {
-	m.cursorTo(m.b.Node(id))
-	round := m.focusRound()
-	at := -1
-	for i, r := range round {
-		if r == id {
-			at = i
+// backFromVim takes in what a vim session changed: the header and stats of
+// every node it showed, what ZF did, and the cursor on the node it ended on.
+func (m *Model) backFromVim(msg editorDoneMsg) {
+	visited := msg.visited
+	if len(visited) == 0 {
+		visited = []string{msg.id}
+	}
+	for _, id := range visited {
+		path := msg.strategy
+		if id != msg.id || path == "" {
+			path = filepath.Join(board.NodeDir(m.dir, id), "strategy.md")
 		}
+		m.pullHeader(id, path)
+		m.stats[id] = readStats(m.dir, id)
 	}
-	var next string
-	switch {
-	case at >= 0 && len(round) > 1:
-		next = round[(at+step+len(round))%len(round)]
-	case at < 0 && len(round) > 0 && step > 0:
-		next = round[0]
-	case at < 0 && len(round) > 0:
-		next = round[len(round)-1]
+	for _, f := range msg.focus {
+		m.takeFocus(f.id, f.on)
 	}
-	n := m.b.Node(next)
-	if n == nil {
-		m.visiting = ""
-		m.msg = "no other node in focus — F adds one"
-		return nil
+	if n := m.b.Node(msg.last); n != nil && msg.last != msg.id {
+		m.frameSel = ""
+		m.cursorTo(n)
 	}
-	m.cursorTo(n)
-	return m.openVim(*n)
 }
 
 // takeFocus applies what ZF in vim left node id at.
@@ -485,22 +464,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.msg = "vim: " + msg.err.Error()
 		}
-		if msg.strategy != "" {
-			m.pullHeader(msg.id, msg.strategy)
+		if msg.id != "" {
+			m.backFromVim(msg)
 		}
 		m.previewID = "" // vim may have changed what it shows
-		if msg.id != "" {
-			m.stats[msg.id] = readStats(m.dir, msg.id)
-		}
 		m.toASCII()
-		if msg.focus != nil {
-			m.takeFocus(msg.id, *msg.focus)
-		}
-		if msg.step != 0 && msg.err == nil {
-			cmd = m.openNeighbour(msg.id, msg.step)
-		} else {
-			m.visiting = ""
-		}
 	case tea.KeyMsg:
 		m.msg = ""
 		if m.mode != modeInput && m.mode != modeEdit {

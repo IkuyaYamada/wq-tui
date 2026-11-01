@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -37,76 +39,96 @@ normal ZZ
 	}
 }
 
-// runNodeVim runs wq.vim headless on a strategy, with check.vim's lines
-// after it and env set, and returns vim's exit status and the strategy.
-func runNodeVim(t *testing.T, check string, env ...string) (error, string) {
+// runRound runs wq.vim headless on node start of A, B and C, each with
+// its own strategy, going round round ("id:place" each), then check.vim's
+// lines. It returns what wq would read back and each strategy's text.
+func runRound(t *testing.T, start string, round []string, check string) (vimResult, map[string]string) {
 	t.Helper()
 	dir := t.TempDir()
-	strategy := filepath.Join(dir, "strategy.md")
-	os.WriteFile(strategy, []byte("方針\n"), 0o644)
+	path := func(id string) string { return filepath.Join(dir, id, "strategy.md") }
+	place := map[string]string{}
+	var lines []string
+	for _, r := range round {
+		id, p, _ := strings.Cut(r, ":")
+		place[id] = p
+		lines = append(lines, id+"\t"+p+"\t"+path(id))
+	}
+	for _, id := range []string{"A", "B", "C"} {
+		os.MkdirAll(filepath.Join(dir, id), 0o755)
+		os.WriteFile(path(id), []byte(id+"\n"), 0o644)
+	}
+	roundFile, result := filepath.Join(dir, "round"), filepath.Join(dir, "result")
+	os.WriteFile(roundFile, []byte(strings.Join(lines, "\n")), 0o644)
 	script := filepath.Join(dir, "wq.vim")
 	os.WriteFile(script, nodeVimScript, 0o644)
 	checkPath := filepath.Join(dir, "check.vim")
-	os.WriteFile(checkPath, []byte(check), 0o644)
-	cmd := exec.Command("vim", "-N", "-u", "NONE", "-es", "-S", script, "-S", checkPath, strategy)
-	cmd.Env = append(os.Environ(), env...)
-	err := cmd.Run()
-	body, _ := os.ReadFile(strategy)
-	return err, string(body)
+	os.WriteFile(checkPath, []byte(check+"\nqall!\n"), 0o644)
+	if place[start] == "" {
+		place[start] = "0"
+	}
+	cmd := exec.Command("vim", "-N", "-u", "NONE", "-es", "-S", script, "-S", checkPath, path(start))
+	cmd.Env = append(os.Environ(), "WQ_START="+start, "WQ_FOCUS="+place[start], "WQ_ROUND="+roundFile, "WQ_RESULT="+result)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("vim: %v\n%s", err, out)
+	}
+	bodies := map[string]string{}
+	for _, id := range []string{"A", "B", "C"} {
+		b, _ := os.ReadFile(path(id))
+		bodies[id] = string(b)
+	}
+	return readVimResult(result), bodies
 }
 
-// TestNodeVimCtrlJK checks that C-j / C-k save and leave vim with the exit
-// codes wq reads as next / previous node, when focus has somewhere to go.
-func TestNodeVimCtrlJK(t *testing.T) {
+// TestNodeVimGoesRound checks that C-j / C-k open the next / previous
+// node in the round inside vim, going round, saving the one left.
+func TestNodeVimGoesRound(t *testing.T) {
 	if _, err := exec.LookPath("vim"); err != nil {
 		t.Skip("vim not installed")
 	}
-	for key, want := range map[string]int{"<C-j>": 1, "<C-k>": -1} {
-		err, body := runNodeVim(t, `call setline(1, "書き換え")
-execute "normal \`+key+`"
-`, "WQ_FOCUS_OTHERS=1")
-		step, err := exitStep(err)
-		if err != nil || step != want {
-			t.Errorf("%s: step %d err %v, want %d", key, step, err, want)
-		}
-		if body != "書き換え\n" {
-			t.Errorf("%s should save the strategy: %q", key, body)
-		}
+	r, bodies := runRound(t, "A", []string{"A:1", "C:2"}, `call setline(1, "A2")
+execute "normal \<C-j>"
+call setline(1, "C2")
+execute "normal \<C-j>"
+execute "normal \<C-k>"`)
+	if r.last != "C" || !reflect.DeepEqual(r.visited, []string{"A", "C"}) {
+		t.Errorf("A, C, A, C: last %q visited %v", r.last, r.visited)
+	}
+	if bodies["A"] != "A2\n" || bodies["C"] != "C2\n" || bodies["B"] != "B\n" {
+		t.Errorf("each left node should be saved, B untouched: %q", bodies)
+	}
+
+	// A node from outside focus is in front: C-k from it goes to the last.
+	r, _ = runRound(t, "B", []string{"B:0", "A:1", "C:2"}, `execute "normal \<C-k>"
+execute "normal \<C-j>"`)
+	if r.last != "B" || !reflect.DeepEqual(r.visited, []string{"B", "C"}) {
+		t.Errorf("B, C, B: last %q visited %v", r.last, r.visited)
 	}
 }
 
-// TestNodeVimCtrlJKNowhere checks that C-j stays in vim when no other node
-// is in focus.
-func TestNodeVimCtrlJKNowhere(t *testing.T) {
+// TestNodeVimNowhereToGo checks that C-j stays put with no other node in
+// the round.
+func TestNodeVimNowhereToGo(t *testing.T) {
 	if _, err := exec.LookPath("vim"); err != nil {
 		t.Skip("vim not installed")
 	}
-	err, _ := runNodeVim(t, `execute "normal \<C-j>"
-qall!
-`, "WQ_FOCUS_OTHERS=0")
-	if step, err := exitStep(err); step != 0 || err != nil {
-		t.Errorf("C-j should do nothing: step %d err %v", step, err)
+	r, _ := runRound(t, "A", []string{"A:1"}, `execute "normal \<C-j>"`)
+	if r.last != "A" || !reflect.DeepEqual(r.visited, []string{"A"}) {
+		t.Errorf("last %q visited %v", r.last, r.visited)
 	}
 }
 
-// TestNodeVimZF checks that ZF leaves its answer where wq reads it.
+// TestNodeVimZF checks that ZF records the node going in or out of focus,
+// once per node however often it is pressed.
 func TestNodeVimZF(t *testing.T) {
 	if _, err := exec.LookPath("vim"); err != nil {
 		t.Skip("vim not installed")
 	}
-	for _, c := range []struct {
-		place string
-		keys  string
-		want  bool
-	}{{"0", "ZF", true}, {"2", "ZF", false}, {"0", "ZFZF", false}} {
-		ff := filepath.Join(t.TempDir(), "focus")
-		_, _ = runNodeVim(t, "normal "+c.keys+"\nqall!\n", "WQ_FOCUS="+c.place, "WQ_FOCUS_FILE="+ff)
-		got := readFocusFile(ff)
-		if got == nil || *got != c.want {
-			t.Errorf("place %s, %s: got %v, want %v", c.place, c.keys, got, c.want)
-		}
-		if _, err := os.Stat(ff); err == nil {
-			t.Errorf("reading should clear the file")
-		}
+	r, _ := runRound(t, "B", []string{"B:0", "A:1"}, `normal ZF
+execute "normal \<C-j>"
+normal ZF
+normal ZFZF`)
+	want := []focusChange{{"B", true}, {"A", false}}
+	if !reflect.DeepEqual(r.focus, want) {
+		t.Errorf("focus %+v, want %+v", r.focus, want)
 	}
 }

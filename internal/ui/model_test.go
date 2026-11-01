@@ -1358,12 +1358,6 @@ func threeInARow(t *testing.T) (Model, [3]string) {
 	return m, ids
 }
 
-// vimDone hands back from vim on node id, as C-j (1), C-k (-1) or ZZ (0).
-func vimDone(m Model, id string, step int) (Model, tea.Cmd) {
-	next, cmd := m.Update(editorDoneMsg{id: id, step: step})
-	return next.(Model), cmd
-}
-
 func TestFocusMarksAndWarns(t *testing.T) {
 	m, ids := threeInARow(t)
 	m = press(t, m, "F", "h", "h", "F", "l", "F")
@@ -1400,76 +1394,61 @@ func TestFocusMarksAndWarns(t *testing.T) {
 	}
 }
 
-func TestCtrlJKGoRoundFocus(t *testing.T) {
+// roundIDs is the titles of a vim round, with their places.
+func roundIDs(round []roundNode) []string {
+	var out []string
+	for _, r := range round {
+		out = append(out, fmt.Sprintf("%s:%d", r.node.Title, r.place))
+	}
+	return out
+}
+
+func TestVimRoundIsFocus(t *testing.T) {
 	m, ids := threeInARow(t)
-
-	// Nothing in focus: C-j stays on the board.
-	m, _ = vimDone(m, ids[0], 1)
-	if !strings.Contains(m.msg, "no other node in focus") || m.selected().ID != ids[0] {
-		t.Fatalf("empty focus: msg %q", m.msg)
+	if place, round := m.vimRound(*m.b.Node(ids[0])); place != 0 || !reflect.DeepEqual(roundIDs(round), []string{"一:0"}) {
+		t.Errorf("empty focus: place %d round %v", place, roundIDs(round))
 	}
-
-	// Focus 三 then 一; 二, in between on the board, is skipped.
-	m = press(t, m, "l", "l", "F", "h", "h", "F")
-	m, cmd := vimDone(m, ids[2], 1)
-	if m.selected().ID != ids[0] || cmd == nil {
-		t.Fatalf("C-j from 三 should open 一, at %s", m.selected().Title)
+	m = press(t, m, "F", "h", "h", "F") // 三 then 一
+	if place, round := m.vimRound(*m.b.Node(ids[0])); place != 2 || !reflect.DeepEqual(roundIDs(round), []string{"三:1", "一:2"}) {
+		t.Errorf("from 一: place %d round %v", place, roundIDs(round))
 	}
-	m, _ = vimDone(m, ids[0], 1)
-	if m.selected().ID != ids[2] {
-		t.Errorf("C-j from the last should go round to 三, at %s", m.selected().Title)
+	// 二, outside focus, joins in front; 三 being done stays in.
+	m.b.Node(ids[2]).Done = true
+	if place, round := m.vimRound(*m.b.Node(ids[1])); place != 0 || !reflect.DeepEqual(roundIDs(round), []string{"二:0", "三:1", "一:2"}) {
+		t.Errorf("from 二: place %d round %v", place, roundIDs(round))
 	}
-	m, _ = vimDone(m, ids[2], -1)
-	if m.selected().ID != ids[0] {
-		t.Errorf("C-k from the first should go round to 一, at %s", m.selected().Title)
-	}
-
-	// 二, opened from the board outside focus, joins the round at the
-	// front until vim hands back to the board.
-	m = press(t, m, "l", "<enter>")
-	if m.visiting != ids[1] {
-		t.Fatalf("visiting %q", m.visiting)
-	}
-	m, _ = vimDone(m, ids[1], 1)
-	if m.selected().ID != ids[2] {
-		t.Errorf("C-j from 二 should open 三, at %s", m.selected().Title)
-	}
-	m, _ = vimDone(m, ids[2], -1)
-	if m.selected().ID != ids[1] {
-		t.Errorf("C-k from 三 should come back to 二, at %s", m.selected().Title)
-	}
-	m, _ = vimDone(m, ids[1], 0)
-	if m.visiting != "" {
-		t.Errorf("ZZ should end the visit")
-	}
-
-	// A done node stays in focus and in the round.
-	m = press(t, m, "h", "<space>", "済", "<enter>")
-	m, _ = vimDone(m, ids[2], 1)
-	if !m.b.Node(ids[0]).Done || m.selected().ID != ids[0] {
-		t.Errorf("done 一 should still be in the round, at %s", m.selected().Title)
+	// A frame is not a node: it goes in front of nothing.
+	if _, round := m.vimRound(board.Node{ID: "frame", Title: "枠"}); !reflect.DeepEqual(roundIDs(round), []string{"三:1", "一:2"}) {
+		t.Errorf("from a frame: %v", roundIDs(round))
 	}
 }
 
-func TestZFInVimTogglesFocus(t *testing.T) {
+func TestBackFromVimTakesInTheRound(t *testing.T) {
 	m, ids := threeInARow(t)
-	on, off := true, false
-	next, _ := m.Update(editorDoneMsg{id: ids[1], focus: &on})
-	m = next.(Model)
-	if want := []string{ids[1]}; !reflect.DeepEqual(m.b.Focus, want) {
-		t.Fatalf("ZF on: %v", m.b.Focus)
+	m = press(t, m, "h", "h", "F") // 一 in focus; the cursor on it
+	// vim began on 一, went to 三 and ended there, renaming 三 in its
+	// header, putting 三 in focus and taking 一 out.
+	path := func(id string) string { return filepath.Join(board.NodeDir(m.dir, id), "strategy.md") }
+	for _, id := range ids {
+		if _, err := strategyPath(m.dir, *m.b.Node(id)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	next, _ = m.Update(editorDoneMsg{id: ids[1], focus: &on})
+	body, _ := os.ReadFile(path(ids[2]))
+	os.WriteFile(path(ids[2]), []byte(strings.Replace(string(body), "title: 三", "title: 参", 1)), 0o644)
+	next, _ := m.Update(editorDoneMsg{
+		id: ids[0], strategy: path(ids[0]), last: ids[2], visited: []string{ids[0], ids[2]},
+		focus: []focusChange{{ids[2], true}, {ids[0], false}},
+	})
 	m = next.(Model)
-	if len(m.b.Focus) != 1 {
-		t.Errorf("on twice is still once: %v", m.b.Focus)
+	if m.selected().ID != ids[2] {
+		t.Errorf("the cursor should end on 三, at %s", m.selected().Title)
 	}
-	// ZF off then C-j: the node left focus, so the round starts over.
-	m = press(t, m, "h", "h", "F") // 一 in focus too
-	next, cmd := m.Update(editorDoneMsg{id: ids[1], focus: &off, step: 1})
-	m = next.(Model)
-	if m.b.FocusIndex(ids[1]) >= 0 || m.selected().ID != ids[0] || cmd == nil {
-		t.Errorf("ZF off + C-j: focus %v at %s", m.b.Focus, m.selected().Title)
+	if m.b.Node(ids[2]).Title != "参" {
+		t.Errorf("the header of a node visited by C-j should be taken in: %q", m.b.Node(ids[2]).Title)
+	}
+	if want := []string{ids[2]}; !reflect.DeepEqual(m.b.Focus, want) {
+		t.Errorf("focus %v, want %v", m.b.Focus, want)
 	}
 }
 
