@@ -328,7 +328,7 @@ reads, so changes can go missing unnoticed; git makes the conflict visible.
 | Key | Action |
 | --- | --- |
 | `ZZ` / `:wq` | Save and return to the board |
-| `C-j` / `C-k` | Save and open the next / previous node in [focus](#focus), going round, without leaving vim (each node keeps its undo history; `C-^` and `C-o` work across them too). A node opened from outside focus is in the round too, in front. With no other node to go to they do nothing |
+| `C-j` / `C-k` | Save and open the next / previous node in [focus](#focus), going round, without leaving vim (each node keeps its undo history; `C-^` and `C-o` work across them too). A node opened from outside focus is in the round too, in front, and so is any other file you open meanwhile (`:e`), right after where you were, until vim ends. With no other node to go to they do nothing |
 | `ZF` | Put this node in focus or take it out (the status line shows `focus ①` while it is in). The board catches up when vim ends; until then the round stays as it began |
 
 These keys come from `internal/ui/wq.vim`, embedded in the binary and

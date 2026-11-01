@@ -4,8 +4,10 @@
 " a hit-enter prompt, used to throw you out of vim. C-j / C-k save and
 " open the next / previous node in focus (F on the board), going round,
 " without leaving vim; a node opened from outside focus is in the round
-" too, in front. ZF puts the node in focus or takes it out; the board
-" catches up once vim ends, the round here stays as it began.
+" too, in front. Any other file opened meanwhile (:e) joins the round as
+" a detour, right after where you were, until vim ends. ZF puts the node
+" in focus or takes it out; the board catches up once vim ends, the round
+" here stays as it began.
 "
 " wq passes, through the environment: WQ_START, the id of the node vim
 " opens on; WQ_FOCUS, its place in focus (0 when out of it); WQ_ROUND, a
@@ -25,7 +27,8 @@ if $WQ_ROUND !=# '' && filereadable($WQ_ROUND)
   endfor
 endif
 
-let s:cur = $WQ_START
+let s:cur = $WQ_START  " the round entry in view: a node's id, or file:<path>
+let s:last = s:cur     " the last node in view, for the board's cursor
 let s:place = {s:cur : str2nr($WQ_FOCUS)} " id -> place in focus, 0 out, -1 in at an unknown place
 let s:paths = {fnamemodify(expand('%'), ':p') : s:cur}
 for s:e in s:round
@@ -62,23 +65,41 @@ function! s:Save() abort
   if $WQ_RESULT ==# ''
     return
   endif
-  let lines = ["last\t" . s:cur]
+  let lines = ["last\t" . s:last]
   call extend(lines, map(copy(s:visited), '"visit\t" . v:val'))
   call extend(lines, map(copy(s:changes), '"focus\t" . v:val[0] . "\t" . v:val[1]'))
   call writefile(lines, $WQ_RESULT)
 endfunction
 
-" A node's strategy coming into view, by C-j / C-k or any other way
-" (C-^, C-o), makes it the current node.
+" IsDetour reports whether id is a file visited on the way, not a node.
+function! s:IsDetour(id) abort
+  return a:id =~# '^file:'
+endfunction
+
+" A strategy or detour coming into view, by C-j / C-k or any other way
+" (C-^, C-o, :e), makes it the current entry. A plain file not in the
+" round yet goes in right after where you were; help, quickfix, a
+" directory listing and the like stay out.
 function! s:Enter() abort
-  let id = get(s:paths, fnamemodify(expand('%'), ':p'), '')
-  if id !=# ''
-    let s:cur = id
+  let path = fnamemodify(expand('%'), ':p')
+  let id = get(s:paths, path, '')
+  if id ==# ''
+    if &buftype !=# '' || expand('%') ==# '' || isdirectory(path)
+      call s:Status()
+      return
+    endif
+    let id = 'file:' . path
+    let s:paths[path] = id
+    call insert(s:round, {'id': id, 'place': 0, 'path': path}, s:At() + 1)
+  endif
+  let s:cur = id
+  if !s:IsDetour(id)
+    let s:last = id
     if index(s:visited, id) < 0
       call add(s:visited, id)
     endif
-    call s:Save()
   endif
+  call s:Save()
   call s:Status()
 endfunction
 
@@ -95,6 +116,10 @@ function! s:Step(dir) abort
 endfunction
 
 function! s:ToggleFocus() abort
+  if s:IsDetour(s:cur)
+    echo 'not a node: only nodes go in focus'
+    return
+  endif
   let on = get(s:place, s:cur, 0) == 0
   let s:place[s:cur] = on ? -1 : 0 " its place is only known once wq has it
   call filter(s:changes, 'v:val[0] !=# s:cur')

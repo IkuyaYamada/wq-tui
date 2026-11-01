@@ -105,6 +105,36 @@ execute "normal \<C-j>"`)
 	}
 }
 
+// TestNodeVimDetour checks that a file opened with :e joins the round
+// right after the node it was opened from, until vim ends, and that ZF
+// leaves it alone.
+func TestNodeVimDetour(t *testing.T) {
+	if _, err := exec.LookPath("vim"); err != nil {
+		t.Skip("vim not installed")
+	}
+	// A, :e a scratch file, C-j to C, C-k back to the file, ZF there,
+	// C-k to A, C-k to C (round: A, file, C).
+	r, _ := runRound(t, "A", []string{"A:1", "C:2"}, `execute 'edit' tempname()
+call setline(1, "寄り道")
+execute "normal \<C-j>"
+execute "normal \<C-k>"
+normal ZF
+execute "normal \<C-k>"
+execute "normal \<C-k>"`)
+	// Had the file stayed out of the round, C-k from C would have gone to
+	// A and ZF would have taken A out of focus.
+	if r.last != "C" || !reflect.DeepEqual(r.visited, []string{"A", "C"}) || len(r.focus) != 0 {
+		t.Errorf("last %q visited %v focus %+v", r.last, r.visited, r.focus)
+	}
+
+	// Ending on the detour leaves the board on the last node seen.
+	r, _ = runRound(t, "A", []string{"A:1", "C:2"}, `execute "normal \<C-j>"
+execute 'edit' tempname()`)
+	if r.last != "C" {
+		t.Errorf("ending on a detour: last %q, want C", r.last)
+	}
+}
+
 // TestNodeVimNowhereToGo checks that C-j stays put with no other node in
 // the round.
 func TestNodeVimNowhereToGo(t *testing.T) {
