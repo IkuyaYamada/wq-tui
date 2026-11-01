@@ -96,6 +96,11 @@ type Model struct {
 	connFrom string
 	follow   follow // FOLLOW mode's way so far
 
+	// visiting is a node opened in vim from outside the focus list: C-j /
+	// C-k take it into their round, at the front, until vim hands back to
+	// the board.
+	visiting string
+
 	listAt, listScroll int // the list (L): the entry under its cursor, lines scrolled off
 
 	width, height int
@@ -360,22 +365,101 @@ func (m *Model) jump(step int) {
 	}
 }
 
+// focusSoft is how many nodes focus holds before F warns that it is more
+// than a mind keeps going at once. It still takes them.
+const focusSoft = 3
+
+// toggleFocus puts the node under the cursor in focus, at the end, or
+// takes it out.
+func (m *Model) toggleFocus() {
+	n := m.selected()
+	if n == nil {
+		return
+	}
+	m.checkpoint()
+	if !m.b.ToggleFocus(n.ID) {
+		m.save()
+		m.msg = "out of focus"
+		return
+	}
+	m.save()
+	k := len(m.b.Focused())
+	m.msg = "focus " + circled(k)
+	if k > focusSoft {
+		m.msg += fmt.Sprintf(" — %d at once, more than %d", k, focusSoft)
+	}
+}
+
+// focusRound is what C-j / C-k go round: the focus list, with the node
+// being visited from outside it in front.
+func (m *Model) focusRound() []string {
+	ids := m.b.Focused()
+	if m.visiting != "" && m.b.Node(m.visiting) != nil && m.b.FocusIndex(m.visiting) < 0 {
+		ids = append([]string{m.visiting}, ids...)
+	}
+	return ids
+}
+
+// openVim opens node n in vim, telling it where it stands in focus. A
+// node outside focus becomes the one being visited.
+func (m *Model) openVim(n board.Node) tea.Cmd {
+	if m.b.Node(n.ID) != nil && m.b.FocusIndex(n.ID) < 0 {
+		m.visiting = n.ID
+	}
+	var f vimFocus
+	for i, id := range m.b.Focused() {
+		if id == n.ID {
+			f.place = i + 1
+		}
+	}
+	for _, id := range m.focusRound() {
+		if id != n.ID {
+			f.others++
+		}
+	}
+	return openNode(m.dir, n, f)
+}
+
 // openNeighbour moves from node id to the next (step 1) or previous (-1)
-// node, the one w / b would pick, and opens it in vim. At either end it
-// stays on the board.
+// node in the focus round, going round, and opens it in vim. A node off
+// the round (a frame, a node taken out of focus) steps to its first or
+// last. With nowhere else to go it stays on the board.
 func (m *Model) openNeighbour(id string, step int) tea.Cmd {
 	m.cursorTo(m.b.Node(id))
-	m.jump(step)
-	n := m.selected()
-	if n == nil || n.ID == id {
-		if step > 0 {
-			m.msg = "no next node"
-		} else {
-			m.msg = "no previous node"
+	round := m.focusRound()
+	at := -1
+	for i, r := range round {
+		if r == id {
+			at = i
 		}
+	}
+	var next string
+	switch {
+	case at >= 0 && len(round) > 1:
+		next = round[(at+step+len(round))%len(round)]
+	case at < 0 && len(round) > 0 && step > 0:
+		next = round[0]
+	case at < 0 && len(round) > 0:
+		next = round[len(round)-1]
+	}
+	n := m.b.Node(next)
+	if n == nil {
+		m.visiting = ""
+		m.msg = "no other node in focus — F adds one"
 		return nil
 	}
-	return openNode(m.dir, *n)
+	m.cursorTo(n)
+	return m.openVim(*n)
+}
+
+// takeFocus applies what ZF in vim left node id at.
+func (m *Model) takeFocus(id string, on bool) {
+	if m.b.Node(id) == nil || (m.b.FocusIndex(id) >= 0) == on {
+		return
+	}
+	m.checkpoint()
+	m.b.ToggleFocus(id)
+	m.save()
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -415,8 +499,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.stats[msg.id] = readStats(m.dir, msg.id)
 		}
 		m.toASCII()
+		if msg.focus != nil {
+			m.takeFocus(msg.id, *msg.focus)
+		}
 		if msg.step != 0 && msg.err == nil {
 			cmd = m.openNeighbour(msg.id, msg.step)
+		} else {
+			m.visiting = ""
 		}
 	case tea.KeyMsg:
 		m.msg = ""
@@ -780,6 +869,8 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		m.startFast()
 	case "L":
 		m.startList()
+	case "F":
+		m.toggleFocus()
 	case "w":
 		m.jump(1)
 	case "b":
@@ -833,7 +924,7 @@ func (m *Model) keyNormal(k tea.KeyMsg) tea.Cmd {
 		if n == nil {
 			return nil
 		}
-		return openNode(m.dir, *n)
+		return m.openVim(*n)
 	case "D":
 		m.deleteRow()
 	case "-":
@@ -1589,7 +1680,7 @@ var (
 )
 
 var help = map[mode]string{
-	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · s fast: node to node · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yo sequel: copy as #2, connected (⏎/p places it here, or under the node) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
+	modeNormal:    "hjkl cursor · ^d/^u half page · ^e/^y scroll · zz/zt/zb align · zc/zo denser/fuller · w/b next/prev node · / search, n/N next/prev match · s fast: node to node · f follow edges · L list every title · gg first open · gx open url · gr copy the command resuming the node's agent session (gR runs it here) · R reload · a add here · o/O insert below/above · i rename · m move · yy/p copy / paste (esc drops) · yo sequel: copy as #2, connected (⏎/p places it here, or under the node) · yp copy strategy.md path · v/V select · c connect · ␣ done · ⏎ open · F focus on/off (^j/^k in vim go round it) · K preview · gs split into a frame · x delete · dd/D delete row · [␣/]␣ add row · - add / remove break below the row · M move / relabel / x delete break · u/^r undo/redo · q quit",
 	modeInput:     "⏎ ok · esc cancel",
 	modeMove:      "hjkl slide to next empty cell · ⏎ place · esc cancel",
 	modeConnect:   "hjkl pick target · ⏎ connect / disconnect · esc cancel",

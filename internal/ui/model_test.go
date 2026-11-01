@@ -1346,27 +1346,130 @@ func TestDeleteSessionBreak(t *testing.T) {
 	}
 }
 
-func TestCtrlJKInVimOpensNeighbour(t *testing.T) {
+// threeInARow puts 一 二 三 side by side on row 0, the cursor on 三.
+func threeInARow(t *testing.T) (Model, [3]string) {
+	t.Helper()
 	m := New(t.TempDir(), &board.Board{})
-	m = press(t, m, "a", "一", "<enter>", "o", "二", "<enter>")
-	second := *m.selected()
-	m = press(t, m, "k")
-	first := *m.selected()
+	m = press(t, m, "a", "一", "<enter>", "l", "a", "二", "<enter>", "l", "a", "三", "<enter>")
+	var ids [3]string
+	for i := range ids {
+		ids[i] = m.b.At(0, i).ID
+	}
+	return m, ids
+}
 
-	next, cmd := m.Update(editorDoneMsg{id: first.ID, step: 1})
-	m = next.(Model)
-	if m.selected().ID != second.ID || cmd == nil {
-		t.Fatalf("C-j should move to and open %s, at %v cmd %v", second.Title, m.selected(), cmd != nil)
+// vimDone hands back from vim on node id, as C-j (1), C-k (-1) or ZZ (0).
+func vimDone(m Model, id string, step int) (Model, tea.Cmd) {
+	next, cmd := m.Update(editorDoneMsg{id: id, step: step})
+	return next.(Model), cmd
+}
+
+func TestFocusMarksAndWarns(t *testing.T) {
+	m, ids := threeInARow(t)
+	m = press(t, m, "F", "h", "h", "F", "l", "F")
+	if want := []string{ids[2], ids[0], ids[1]}; !reflect.DeepEqual(m.b.Focus, want) {
+		t.Fatalf("focus %v, want the order F was pressed in %v", m.b.Focus, want)
 	}
-	next, _ = m.Update(editorDoneMsg{id: second.ID, step: 1})
-	m = next.(Model)
-	if m.selected().ID != second.ID || m.msg != "no next node" {
-		t.Errorf("past the last node should stay on the board: %q", m.msg)
+	if m.msg != "focus ③" {
+		t.Errorf("msg %q", m.msg)
 	}
-	next, cmd = m.Update(editorDoneMsg{id: second.ID, step: -1})
+	m = press(t, m, "o", "四", "<enter>", "F")
+	if !strings.Contains(m.msg, "more than 3") {
+		t.Errorf("a fourth should warn but go in: %q %v", m.msg, m.b.Focus)
+	}
+	if len(m.b.Focus) != 4 {
+		t.Errorf("a fourth should still go in: %v", m.b.Focus)
+	}
+	m = press(t, m, "F")
+	if m.msg != "out of focus" || len(m.b.Focus) != 3 {
+		t.Errorf("F again takes it out: %q %v", m.msg, m.b.Focus)
+	}
+	m = press(t, m, "u")
+	if len(m.b.Focus) != 4 {
+		t.Errorf("undo should bring it back: %v", m.b.Focus)
+	}
+
+	// The cards carry their place: 三 is ①, 一 is ②.
+	view := m.View()
+	if !strings.Contains(view, "① 三") || !strings.Contains(view, "② 一") {
+		t.Errorf("marks missing:\n%s", view)
+	}
+	m = press(t, m, "z", "c")
+	if view := m.View(); !strings.Contains(view, "① 三") {
+		t.Errorf("blocks should be marked too:\n%s", view)
+	}
+}
+
+func TestCtrlJKGoRoundFocus(t *testing.T) {
+	m, ids := threeInARow(t)
+
+	// Nothing in focus: C-j stays on the board.
+	m, _ = vimDone(m, ids[0], 1)
+	if !strings.Contains(m.msg, "no other node in focus") || m.selected().ID != ids[0] {
+		t.Fatalf("empty focus: msg %q", m.msg)
+	}
+
+	// Focus 三 then 一; 二, in between on the board, is skipped.
+	m = press(t, m, "l", "l", "F", "h", "h", "F")
+	m, cmd := vimDone(m, ids[2], 1)
+	if m.selected().ID != ids[0] || cmd == nil {
+		t.Fatalf("C-j from 三 should open 一, at %s", m.selected().Title)
+	}
+	m, _ = vimDone(m, ids[0], 1)
+	if m.selected().ID != ids[2] {
+		t.Errorf("C-j from the last should go round to 三, at %s", m.selected().Title)
+	}
+	m, _ = vimDone(m, ids[2], -1)
+	if m.selected().ID != ids[0] {
+		t.Errorf("C-k from the first should go round to 一, at %s", m.selected().Title)
+	}
+
+	// 二, opened from the board outside focus, joins the round at the
+	// front until vim hands back to the board.
+	m = press(t, m, "l", "<enter>")
+	if m.visiting != ids[1] {
+		t.Fatalf("visiting %q", m.visiting)
+	}
+	m, _ = vimDone(m, ids[1], 1)
+	if m.selected().ID != ids[2] {
+		t.Errorf("C-j from 二 should open 三, at %s", m.selected().Title)
+	}
+	m, _ = vimDone(m, ids[2], -1)
+	if m.selected().ID != ids[1] {
+		t.Errorf("C-k from 三 should come back to 二, at %s", m.selected().Title)
+	}
+	m, _ = vimDone(m, ids[1], 0)
+	if m.visiting != "" {
+		t.Errorf("ZZ should end the visit")
+	}
+
+	// A done node stays in focus and in the round.
+	m = press(t, m, "h", "<space>", "済", "<enter>")
+	m, _ = vimDone(m, ids[2], 1)
+	if !m.b.Node(ids[0]).Done || m.selected().ID != ids[0] {
+		t.Errorf("done 一 should still be in the round, at %s", m.selected().Title)
+	}
+}
+
+func TestZFInVimTogglesFocus(t *testing.T) {
+	m, ids := threeInARow(t)
+	on, off := true, false
+	next, _ := m.Update(editorDoneMsg{id: ids[1], focus: &on})
 	m = next.(Model)
-	if m.selected().ID != first.ID || cmd == nil {
-		t.Errorf("C-k should move to and open %s", first.Title)
+	if want := []string{ids[1]}; !reflect.DeepEqual(m.b.Focus, want) {
+		t.Fatalf("ZF on: %v", m.b.Focus)
+	}
+	next, _ = m.Update(editorDoneMsg{id: ids[1], focus: &on})
+	m = next.(Model)
+	if len(m.b.Focus) != 1 {
+		t.Errorf("on twice is still once: %v", m.b.Focus)
+	}
+	// ZF off then C-j: the node left focus, so the round starts over.
+	m = press(t, m, "h", "h", "F") // 一 in focus too
+	next, cmd := m.Update(editorDoneMsg{id: ids[1], focus: &off, step: 1})
+	m = next.(Model)
+	if m.b.FocusIndex(ids[1]) >= 0 || m.selected().ID != ids[0] || cmd == nil {
+		t.Errorf("ZF off + C-j: focus %v at %s", m.b.Focus, m.selected().Title)
 	}
 }
 

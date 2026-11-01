@@ -112,13 +112,14 @@ func makeLayout(b *board.Board, termW int, d density) layout {
 	// A row of blocks grows until the longest title in it shows whole; full
 	// cards keep their height and cut titles short.
 	extra := make([]int, rows)
+	marks := focusMarks(b)
 	for _, n := range b.Nodes {
 		if n.Row >= rows {
 			continue
 		}
 		switch d {
 		case densityBlocks:
-			rows, note := blockLines(n, l.cardW)
+			rows, note := blockLines(n, l.cardW, marks[n.ID])
 			if note != "" {
 				rows = append(rows, note)
 			}
@@ -212,6 +213,10 @@ const (
 	stCardChecks
 	stCardChecksDone
 	stCardNote
+	stMark         // a focus card's ①, ②, …
+	stCardMark     // the same on a block
+	stCardMarkSel  // on a block under the cursor
+	stCardMarkDone // on a done block
 	stFrame // the first of the frame styles: see frameStyle
 )
 
@@ -250,6 +255,28 @@ var styles = map[style]lipgloss.Style{
 	stCardChecks:     lipgloss.NewStyle().Background(bandBg).Foreground(bandGreen),
 	stCardChecksDone: lipgloss.NewStyle().Background(bandBg).Foreground(bandDoneFg),
 	stCardNote:       lipgloss.NewStyle().Background(bandDoneBg).Foreground(bandGreen).Italic(true),
+
+	stMark:         lipgloss.NewStyle().Foreground(markFg).Bold(true),
+	stCardMark:     lipgloss.NewStyle().Background(bandBg).Foreground(markFg).Bold(true),
+	stCardMarkSel:  lipgloss.NewStyle().Background(lipgloss.Color("25")).Foreground(markFg).Bold(true),
+	stCardMarkDone: lipgloss.NewStyle().Background(bandDoneBg).Foreground(markFg).Bold(true),
+}
+
+// markFg is the orange a focus card's number stands out in.
+var markFg = lipgloss.AdaptiveColor{Light: "166", Dark: "208"}
+
+// blockMarkStyle is the focus number's style on a block drawn in st, so
+// it keeps the block's shade; on a target or a moving block it takes st.
+func blockMarkStyle(st style) style {
+	switch st {
+	case stCard:
+		return stCardMark
+	case stCardSel, stCardDoneSel:
+		return stCardMarkSel
+	case stCardDone:
+		return stCardMarkDone
+	}
+	return st
 }
 
 // Bands (compact cards and blocks) are shaded; the shades follow the
@@ -448,7 +475,7 @@ func nodeMarks(n board.Node) string {
 	return s
 }
 
-func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool, st nodeStats) {
+func drawCard(cv *canvas, l layout, n board.Node, mark string, border, title style, bold bool, st nodeStats) {
 	f := frameNormal
 	if bold {
 		f = frameBold
@@ -477,22 +504,19 @@ func drawCard(cv *canvas, l layout, n board.Node, border, title style, bold bool
 		}
 		cv.text(end-runewidth.StringWidth(p), y, p, ps)
 	}
-	label := n.Title
-	if n.Done {
-		label = "✓ " + label
-	}
-	if label == "" {
-		label = "…"
-	}
+	label := blockLabel(n, mark)
 	// A completion comment takes the second line, so the card (and the
 	// grid) keeps its size; the title gives up its second line for it.
 	if n.Done && n.DoneNote != "" {
 		cv.text(x+2, y+1, truncTitle(label, w-4), title)
 		cv.text(x+2, y+2, runewidth.Truncate(n.DoneNote, w-4, "…"), stDoneNote)
-		return
+	} else {
+		for i, line := range titleRows(label, w-4) {
+			cv.text(x+2, y+1+i, line, title)
+		}
 	}
-	for i, line := range titleRows(label, w-4) {
-		cv.text(x+2, y+1+i, line, title)
+	if mark != "" { // the label starts with it; paint it over in orange
+		cv.text(x+2, y+1, mark, stMark)
 	}
 }
 
@@ -756,6 +780,7 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 		drawFrameLines(cv, f, frameSt[i], heavy)
 	}
 	onCursor := false
+	marks := focusMarks(b)
 	for _, n := range b.Nodes {
 		border, title, bold := stBorder, stTitle, false
 		switch {
@@ -777,10 +802,10 @@ func renderBoard(b *board.Board, l layout, routes []route, v view) *canvas {
 			}
 		}
 		if l.compact {
-			drawCompactCard(cv, l, n, compactStyle(border, n.Done), v.stats[n.ID])
+			drawCompactCard(cv, l, n, marks[n.ID], compactStyle(border, n.Done), v.stats[n.ID])
 			continue
 		}
-		drawCard(cv, l, n, border, title, bold, v.stats[n.ID])
+		drawCard(cv, l, n, marks[n.ID], border, title, bold, v.stats[n.ID])
 	}
 	if !onCursor && v.cursorRow >= 0 && v.cursorRow < len(l.rowY) {
 		if l.compact {
@@ -945,7 +970,7 @@ func compactStyle(border style, done bool) style {
 // when done), and at the right end the task list's progress and ↗ when it
 // has a link. Meters and the completion comment are left out; K shows
 // them.
-func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats) {
+func drawCompactCard(cv *canvas, l layout, n board.Node, mark string, st style, ns nodeStats) {
 	x, y, w, h := l.colX(n.Col), l.rowY[n.Row], l.cardW, l.h(n.Row)
 	fill := st // the strikethrough of a done title, not of the whole band
 	switch st {
@@ -977,7 +1002,7 @@ func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats)
 	// A block: the whole title over as many lines as the row gives it,
 	// the completion comment after it, the progress and ↗ at the right
 	// end of the first line that has room for them.
-	rows, note := blockLines(n, w)
+	rows, note := blockLines(n, w, mark)
 	for i, line := range rows {
 		cv.text(x+1, y+i, line, st)
 	}
@@ -1009,9 +1034,14 @@ func drawCompactCard(cv *canvas, l layout, n board.Node, st style, ns nodeStats)
 		}
 		cv.text(x+w-1-rw, y+at, right, rst)
 	}
+	if mark != "" { // the first line starts with it; paint it over in orange
+		cv.text(x+1, y, mark, blockMarkStyle(st))
+	}
 }
 
-func blockLabel(n board.Node) string {
+// blockLabel is the title a card shows: ✓ first when done, and before
+// that the node's place in the focus list (mark) when it is in it.
+func blockLabel(n board.Node, mark string) string {
 	label := n.Title
 	if n.Done {
 		label = "✓ " + label
@@ -1019,14 +1049,39 @@ func blockLabel(n board.Node) string {
 	if label == "" {
 		label = "…"
 	}
+	if mark != "" {
+		label = mark + " " + label
+	}
 	return label
+}
+
+// focusMarks numbers the focus nodes ①, ②, … in the order C-j goes
+// round them.
+func focusMarks(b *board.Board) map[string]string {
+	ids := b.Focused()
+	if len(ids) == 0 {
+		return nil
+	}
+	marks := make(map[string]string, len(ids))
+	for i, id := range ids {
+		marks[id] = circled(i + 1)
+	}
+	return marks
+}
+
+// circled is n as ①–⑳, or (n) past twenty.
+func circled(n int) string {
+	if n >= 1 && n <= 20 {
+		return string(rune('①' + n - 1))
+	}
+	return fmt.Sprintf("(%d)", n)
 }
 
 // blockLines is what a block shows: the whole title wrapped inside a
 // column of padding on either side, and a done block's comment.
-func blockLines(n board.Node, cardW int) (rows []string, note string) {
+func blockLines(n board.Node, cardW int, mark string) (rows []string, note string) {
 	w := max(cardW-2, 2)
-	rest := blockLabel(n)
+	rest := blockLabel(n, mark)
 	for runewidth.StringWidth(rest) > w {
 		head := runewidth.Truncate(rest, w, "")
 		if head == "" {

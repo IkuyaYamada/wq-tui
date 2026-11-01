@@ -285,6 +285,8 @@ func routeKey(b *board.Board, width int) string {
 	for _, g := range b.Groups {
 		fmt.Fprintf(&sb, "|%v", g.Members)
 	}
+	// The focus marks go before titles, so they can make a block taller.
+	fmt.Fprintf(&sb, "|%v", b.Focus)
 	return sb.String()
 }
 

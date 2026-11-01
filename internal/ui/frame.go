@@ -80,7 +80,7 @@ func (m *Model) keyFrame(key string, g *board.Group) (cmd tea.Cmd, done bool) {
 		m.inputFrame = true
 		return m.startInput("frame> ", g.Title), true
 	case "enter":
-		return openNode(m.dir, *m.focus()), true
+		return m.openVim(*m.focus()), true
 	case "c":
 		m.checkpoint()
 		m.b.CycleColor(g.ID)

@@ -37,6 +37,9 @@ type Board struct {
 	Edges  []Edge  `json:"edges"`
 	Breaks []Break `json:"breaks,omitempty"`
 	Groups []Group `json:"groups,omitempty"`
+	// Focus lists the nodes on your mind right now, in the order they were
+	// added; C-j / C-k in a node's vim go round them.
+	Focus []string `json:"focus,omitempty"`
 
 	extra map[string]json.RawMessage // fields from a newer wq, kept as-is
 }
@@ -74,6 +77,7 @@ func (b *Board) Clone() *Board {
 		Edges:  append([]Edge(nil), b.Edges...),
 		Breaks: append([]Break(nil), b.Breaks...),
 		Groups: cloneGroups(b.Groups),
+		Focus:  append([]string(nil), b.Focus...),
 		extra:  b.extra,
 	}
 }
@@ -340,6 +344,7 @@ func (b *Board) Delete(id string) error {
 	}
 	b.Nodes = nodes
 	b.leaveGroups(map[string]bool{id: true})
+	b.Unfocus(id)
 	edges := b.Edges[:0]
 	for _, e := range b.Edges {
 		if e.From != id && e.To != id {

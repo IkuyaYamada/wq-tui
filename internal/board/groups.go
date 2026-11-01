@@ -139,6 +139,11 @@ func (b *Board) Decompose(id string, child Node) error {
 	g := Group{ID: n.ID, Title: n.Title, URL: n.URL, Color: b.nextColor(), CreatedAt: n.CreatedAt, Members: []string{child.ID}}
 	child.Row, child.Col = n.Row, n.Col
 	*n = child
+	for i := range b.Focus {
+		if b.Focus[i] == id {
+			b.Focus[i] = child.ID // the frame is no node; the work goes on in its child
+		}
+	}
 	for i := range b.Edges {
 		if b.Edges[i].From == id {
 			b.Edges[i].From = child.ID

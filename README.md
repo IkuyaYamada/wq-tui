@@ -125,6 +125,7 @@ board. Left out: the maturity meter (`K` shows it).
 | `c` | Connect mode: `hjkl` picks a target, `Enter` toggles the edge (either end works; edges always point down) |
 | `Space` | Complete: asks for a comment (`Enter` completes, `Esc` cancels), keeps it with the time of completion and shows it in green on the card's second line (the title shrinks to one line; the card keeps its size). On a done node it reopens right away and drops the comment |
 | `Enter` | Open the node's strategy in vim, full screen |
+| `F` | Put the node in focus, at the end, or take it out (see [Focus](#focus)) |
 | `K` | Preview the node beside its card, read-only: when it was completed and the comment, if done, then the strategy. It follows the cursor; `Ctrl+d` / `Ctrl+u` scroll it, `K` / `Esc` close it. For quick fixes without vim, `i` edits the strategy body in place: `Enter` is a new line, `Esc` (or `Ctrl+s`) saves and closes, `Ctrl+c` throws the changes away (asking once if anything changed) |
 | `x` | Delete the node under the cursor. What went through it is bridged: A → B → C becomes A → C, and with branches every node before it is connected to every node after it (skipping pairs already joined some other way) |
 | `dd` / `D` | Delete the cursor's row, nodes included, pulling the rows below up |
@@ -150,6 +151,18 @@ new node into a free cell across a break.
 The break gets a line of its own below the edge lane, so edges only cross
 it straight down and never run along it; the label is placed where no edge
 crosses.
+
+## Focus
+
+Focus is the handful of nodes on your mind right now, wherever they sit on
+the board. `F` adds the node under the cursor at the end or takes it out;
+each card in focus shows its place before its title (`① `, `② `, …), and
+`C-j` / `C-k` in a node's vim go round them in that order, skipping
+everything in between. A done node stays in focus until you take it out.
+Focus lives in board.json as `focus`, a list of node ids; undo covers it.
+
+Focus takes any number, but past three `F` says so: more than that is
+rarely worked on at once.
 
 ## Frames
 
@@ -316,8 +329,9 @@ reads, so changes can go missing unnoticed; git makes the conflict visible.
 
 | Key | Action |
 | --- | --- |
-| `q` | Save and return to the board |
-| `C-j` / `C-k` | Save and open the next / previous node (the one `w` / `b` would pick) |
+| `ZZ` / `:wq` | Save and return to the board |
+| `C-j` / `C-k` | Save and open the next / previous node in [focus](#focus), going round. A node opened from outside focus joins the round, in front, until you are back on the board. With no other node to go to they do nothing |
+| `ZF` | Put this node in focus or take it out (the status line shows `focus ①` while it is in) |
 
 These keys come from `internal/ui/wq.vim`, embedded in the binary and
 sourced with `vim -S`, so they only apply to these sessions. `WQ_VIM`

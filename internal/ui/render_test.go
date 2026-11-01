@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -130,7 +131,7 @@ func TestBlockRowsGrowToShowWholeTitles(t *testing.T) {
 	if full.h(0) != fullCardH {
 		t.Errorf("full rows keep their height: %d", full.h(0))
 	}
-	rows, note := blockLines(b.Nodes[0], blocks.cardW)
+	rows, note := blockLines(b.Nodes[0], blocks.cardW, "")
 	if blocks.h(0) != len(rows)+1 || note == "" || blocks.h(1) != compactCardH {
 		t.Errorf("a row of blocks fits its longest title and comment: %v", blocks.rowH[:2])
 	}
@@ -364,5 +365,28 @@ func TestOnlyEmptyRowsAmongBlocksAreDotted(t *testing.T) {
 	}
 	if strings.Contains(out[l.rowY[0]], "·") {
 		t.Errorf("a row with nodes should have no dots: %q", out[l.rowY[0]])
+	}
+}
+
+// TestFocusMarkStandsOut checks that a focus card's number is painted in
+// its own color, on cards and on blocks, under the cursor or not.
+func TestFocusMarkStandsOut(t *testing.T) {
+	b := &board.Board{Nodes: []board.Node{{ID: "A", Title: "甲", Row: 0, Col: 0}, {ID: "B", Title: "乙", Row: 0, Col: 1}}}
+	b.ToggleFocus("B")
+	for _, d := range []density{densityFull, densityBlocks} {
+		l := makeLayout(b, 120, d)
+		for _, cur := range []int{0, 1} {
+			cv := renderBoard(b, l, nil, view{cursorRow: 0, cursorCol: cur, cursorSt: stBorderSel})
+			x, y := l.colX(1)+2, l.rowY[0]+1
+			want := []style{stMark}
+			if d == densityBlocks {
+				x, y = l.colX(1)+1, l.rowY[0]
+				want = []style{stCardMark, stCardMarkSel}
+			}
+			c := cv.cells[y*cv.w+x]
+			if c.r != '①' || !slices.Contains(want, c.st) {
+				t.Errorf("density %d cursor %d: %q in style %d", d, cur, c.r, c.st)
+			}
+		}
 	}
 }

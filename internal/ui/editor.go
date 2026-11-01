@@ -3,10 +3,13 @@ package ui
 import (
 	_ "embed"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -17,12 +20,37 @@ import (
 var nodeVimScript []byte
 
 // editorDoneMsg reports that the vim session on a node has ended. step is
-// 1 or -1 when vim was left with C-j / C-k to open the next or previous node.
+// 1 or -1 when vim was left with C-j / C-k to open the next or previous
+// node in focus; focus is what ZF left the node at, if it was pressed.
 type editorDoneMsg struct {
 	id       string
 	strategy string
 	step     int
+	focus    *bool
 	err      error
+}
+
+// vimFocus is what wq.vim is told about focus when a node opens: the
+// node's place in it (0 when out of it) and how many other nodes C-j /
+// C-k can go to.
+type vimFocus struct {
+	place, others int
+}
+
+// focusFile is where ZF in vim leaves its answer for this wq.
+func focusFile() string {
+	return filepath.Join(os.TempDir(), fmt.Sprintf("wq-focus-%d", os.Getpid()))
+}
+
+// readFocusFile takes ZF's answer, if there is one, and clears it.
+func readFocusFile(path string) *bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	os.Remove(path)
+	on := strings.TrimSpace(string(data)) == "1"
+	return &on
 }
 
 // Exit codes wq.vim leaves with on C-j / C-k (after saving everything).
@@ -84,7 +112,7 @@ func (c vimCmd) SetStdout(w io.Writer) { c.Stdout = tty(w) }
 func (c vimCmd) SetStderr(w io.Writer) { c.Stderr = w }
 
 // openNode opens the node's strategy.md in vim, full screen (see wq.vim).
-func openNode(dir string, n board.Node) tea.Cmd {
+func openNode(dir string, n board.Node, f vimFocus) tea.Cmd {
 	fail := func(err error) tea.Cmd { return func() tea.Msg { return editorDoneMsg{err: err} } }
 	strategy, err := strategyPath(dir, n)
 	if err != nil {
@@ -98,9 +126,16 @@ func openNode(dir string, n board.Node) tea.Cmd {
 	if vim == "" {
 		vim = "vim"
 	}
+	ff := focusFile()
+	os.Remove(ff)
 	cmd := exec.Command(vim, "-S", script, strategy)
+	cmd.Env = append(os.Environ(),
+		"WQ_FOCUS="+strconv.Itoa(f.place),
+		"WQ_FOCUS_OTHERS="+strconv.Itoa(f.others),
+		"WQ_FOCUS_FILE="+ff,
+	)
 	return tea.Exec(vimCmd{cmd}, func(err error) tea.Msg {
 		step, err := exitStep(err)
-		return editorDoneMsg{id: n.ID, strategy: strategy, step: step, err: err}
+		return editorDoneMsg{id: n.ID, strategy: strategy, step: step, focus: readFocusFile(ff), err: err}
 	})
 }
