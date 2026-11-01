@@ -106,7 +106,9 @@ func (m *Model) searchJump(q string, step int) bool {
 func (m *Model) searchHits(q string) []board.Node {
 	q = strings.ToLower(q)
 	var hits []board.Node
-	for _, n := range m.listNodes() {
+	c := m.b.Clone()
+	c.Sort()
+	for _, n := range c.Nodes {
 		text := n.Title + "\n" + n.DoneNote
 		if gi := m.b.GroupOf(n.ID); gi >= 0 {
 			text += "\n" + m.b.Groups[gi].Title

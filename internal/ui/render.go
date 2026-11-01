@@ -217,7 +217,7 @@ const (
 	stCardMark     // the same on a block
 	stCardMarkSel  // on a block under the cursor
 	stCardMarkDone // on a done block
-	stFrame // the first of the frame styles: see frameStyle
+	stFrame        // the first of the frame styles: see frameStyle
 )
 
 var styles = map[style]lipgloss.Style{
