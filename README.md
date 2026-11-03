@@ -331,6 +331,10 @@ reads, so changes can go missing unnoticed; git makes the conflict visible.
 | `C-j` / `C-k` | Save and open the next / previous node in [focus](#focus), going round, without leaving vim (each node keeps its undo history; `C-^` and `C-o` work across them too). A node opened from outside focus is in the round too, in front, and so is any other file you open meanwhile (`:e`), right after where you were, until vim ends. With no other node to go to they do nothing |
 | `ZF` | Put this node in focus or take it out (the status line shows `focus ①` while it is in). The board catches up when vim ends; until then the round stays as it began |
 
+A file written by another process while it is in view is noticed once
+keys stop for `updatetime`: vim offers to load it again (`W11` / `W12`),
+or just does with `autoread` and nothing unsaved.
+
 These keys come from `internal/ui/wq.vim`, embedded in the binary and
 sourced with `vim -S`, so they only apply to these sessions. `WQ_VIM`
 overrides the vim binary.

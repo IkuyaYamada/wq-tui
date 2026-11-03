@@ -135,6 +135,22 @@ execute 'edit' tempname()`)
 	}
 }
 
+// TestNodeVimReload checks that a strategy written by another process
+// while in view is looked at again once keys stop.
+func TestNodeVimReload(t *testing.T) {
+	if _, err := exec.LookPath("vim"); err != nil {
+		t.Skip("vim not installed")
+	}
+	_, bodies := runRound(t, "A", []string{"A:1", "C:2"}, `set autoread
+call writefile(["A外"], expand('%:p'))
+doautocmd CursorHold
+call append('$', '見た')
+write`)
+	if bodies["A"] != "A外\n見た\n" {
+		t.Errorf("A should be loaded again: %q", bodies["A"])
+	}
+}
+
 // TestNodeVimNowhereToGo checks that C-j stays put with no other node in
 // the round.
 func TestNodeVimNowhereToGo(t *testing.T) {

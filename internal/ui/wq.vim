@@ -129,9 +129,20 @@ function! s:ToggleFocus() abort
   echo on ? 'in focus' : 'out of focus'
 endfunction
 
+" A file in view written meanwhile by another process: vim only notices
+" on coming back to it, so look once whenever keys stop for 'updatetime'
+" and offer to load it again (W11 / W12), or just do with 'autoread' and
+" nothing unsaved here.
+function! s:Check() abort
+  if &buftype ==# '' && expand('%') !=# ''
+    checktime %
+  endif
+endfunction
+
 augroup wq
   autocmd!
   autocmd BufEnter * call s:Enter()
+  autocmd CursorHold * call s:Check()
 augroup END
 
 nnoremap <silent> ZZ :wqa<CR>
